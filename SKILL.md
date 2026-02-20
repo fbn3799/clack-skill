@@ -19,23 +19,45 @@ WebSocket relay server that enables real-time voice conversations with an OpenCl
 
 ## Setup
 
-Run the setup script. It creates a venv, installs deps, and configures a systemd service:
+Run the setup script. It creates a venv, installs deps, configures a systemd service, and optionally sets up SSL.
 
 ```bash
 # Set required env vars first (or the script will prompt)
 export ELEVENLABS_API_KEY="sk_..."
-export OPENCLAW_GATEWAY_TOKEN="..."
 
-# Optional overrides
-export OPENCLAW_GATEWAY_URL="http://127.0.0.1:18789"  # default
-export VOICE_RELAY_PORT="9878"                          # default
-export RELAY_AUTH_TOKEN="..."                            # auto-generated if empty
-export STT_PROVIDER="elevenlabs"                        # elevenlabs|openai|deepgram
-export TTS_PROVIDER="elevenlabs"                        # elevenlabs|openai|deepgram
-export TTS_VOICE="will"                                 # voice name or ID
-
-bash scripts/setup.sh [--port 9878] [--install-dir /opt/clack]
+# Run setup
+bash scripts/setup.sh
 ```
+
+The script auto-detects your OpenClaw gateway config. It will ask for your ElevenLabs API key if not set.
+
+### Options
+
+```bash
+bash scripts/setup.sh [--port 9878] [--install-dir /opt/clack] [--domain clack.example.com]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port` | `9878` | Relay server port |
+| `--install-dir` | `/opt/clack` | Installation directory |
+| `--domain` | *(none)* | Domain for SSL setup (enables WSS) |
+
+### Connection modes
+
+**With domain (recommended):**
+```bash
+bash scripts/setup.sh --domain clack.yourdomain.com
+# → wss://clack.yourdomain.com/voice
+```
+Requires a DNS A record pointing the domain to your server IP. The script auto-configures SSL via Caddy or nginx + certbot. Encrypted, no port number needed.
+
+**Without domain:**
+```bash
+bash scripts/setup.sh
+# → ws://<your-ip>:9878/voice
+```
+Works immediately but the connection is unencrypted. You can add SSL later by re-running with `--domain`.
 
 ### Enable OpenClaw Gateway endpoint
 
@@ -51,6 +73,9 @@ The gateway must have `chatCompletions` enabled. Apply this config patch:
 systemctl status clack
 systemctl restart clack
 journalctl -u clack -f
+
+# Add SSL later
+bash scripts/setup.sh --domain clack.yourdomain.com
 ```
 
 ## Client App

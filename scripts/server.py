@@ -534,13 +534,40 @@ def _redeem_pairing_code(code: str) -> bool:
     return True
 
 
+# ── Context store ──
+# Persistent context that gets injected into the system prompt.
+# Can be set via HTTP endpoint or WebSocket message.
+
+CONTEXT_FILE = HISTORY_DIR / "context.json"
+
+
+def load_context() -> dict:
+    """Load saved context. Returns dict with 'text' and optional metadata."""
+    if CONTEXT_FILE.exists():
+        try:
+            return json.loads(CONTEXT_FILE.read_text())
+        except Exception as e:
+            print(f"[Context] Error loading: {e}")
+    return {}
+
+
+def save_context(ctx: dict):
+    """Save context to disk."""
+    try:
+        CONTEXT_FILE.write_text(json.dumps(ctx))
+        print(f"[Context] Saved: {json.dumps(ctx)[:100]}")
+    except Exception as e:
+        print(f"[Context] Error saving: {e}")
+
+
 # ── Voice Session ──
 
 class VoiceSession:
     def __init__(self, websocket: WebSocket, config: dict):
         self.websocket = websocket
         self.config = config
-        self.system_prompt = config.get("systemPrompt", DEFAULT_SYSTEM_PROMPT)
+        self.user_context = load_context()
+        self.system_prompt = self._build_system_prompt(config)
         self.conversation_history = load_history()
         self.audio_buffer = bytearray()
         self.last_assistant_response = ""
@@ -553,6 +580,25 @@ class VoiceSession:
         else:
             self.tts = tts_provider
         self.stt = stt_provider
+
+        # Apply context from start config if provided
+        if config.get("context"):
+            self.update_context(config["context"])
+
+    def _build_system_prompt(self, config: dict) -> str:
+        """Build system prompt with optional user context injected."""
+        base = config.get("systemPrompt", DEFAULT_SYSTEM_PROMPT)
+        ctx = self.user_context
+        if ctx.get("text"):
+            base += f"\n\nUSER CONTEXT (provided by the user — use this to inform your responses):\n{ctx['text']}"
+        return base
+
+    def update_context(self, text: str):
+        """Update the user context and rebuild system prompt."""
+        self.user_context = {"text": text, "updated": time.time()}
+        save_context(self.user_context)
+        self.system_prompt = self._build_system_prompt(self.config)
+        print(f"[Context] Updated: {text[:100]}")
 
     async def send_json(self, data: dict):
         await self.websocket.send_text(json.dumps(data))
@@ -703,6 +749,55 @@ async def clear_history(token: str = Query(default="")):
     return {"cleared": True}
 
 
+@app.get("/context")
+async def get_context(token: str = Query(default="")):
+    """Get the current user context."""
+    if not verify_token(token):
+        return {"error": "unauthorized"}, 401
+    return load_context() or {"text": ""}
+
+
+@app.put("/context")
+async def set_context_put(token: str = Query(default=""), text: str = Query(default="")):
+    """Set user context via query param."""
+    if not verify_token(token):
+        return {"error": "unauthorized"}, 401
+    if not text:
+        return {"error": "text required"}, 400
+    ctx = {"text": text[:1000], "updated": time.time()}
+    save_context(ctx)
+    return {"ok": True, "context": ctx}
+
+
+from fastapi import Request
+
+@app.post("/context")
+async def set_context_post(request: Request, token: str = Query(default="")):
+    """Set user context via JSON body: {"text": "..."}"""
+    if not verify_token(token):
+        return {"error": "unauthorized"}, 401
+    try:
+        body = await request.json()
+        text = body.get("text", "")
+    except Exception:
+        return {"error": "invalid JSON"}, 400
+    if not text:
+        return {"error": "text required"}, 400
+    ctx = {"text": text[:1000], "updated": time.time()}
+    save_context(ctx)
+    return {"ok": True, "context": ctx}
+
+
+@app.delete("/context")
+async def clear_context(token: str = Query(default="")):
+    """Clear user context."""
+    if not verify_token(token):
+        return {"error": "unauthorized"}, 401
+    if CONTEXT_FILE.exists():
+        CONTEXT_FILE.unlink()
+    return {"cleared": True}
+
+
 # ── WebSocket ──
 
 @app.websocket("/voice")
@@ -738,6 +833,18 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                     if session.conversation_history:
                         print(f"[WS] Resuming ({len(session.conversation_history)} messages)")
                     await session.greet()
+                elif msg_type == "set_context" and session:
+                    ctx_text = data.get("text", "")
+                    if ctx_text:
+                        session.update_context(ctx_text)
+                        await session.send_json({"type": "context_updated", "text": ctx_text})
+                    else:
+                        # Clear context
+                        session.user_context = {}
+                        if CONTEXT_FILE.exists():
+                            CONTEXT_FILE.unlink()
+                        session.system_prompt = session._build_system_prompt(session.config)
+                        await session.send_json({"type": "context_cleared"})
                 elif msg_type == "end_speech" and session:
                     if session.processing:
                         print(f"[WS] Ignoring end_speech — still processing")
