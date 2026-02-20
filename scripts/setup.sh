@@ -20,14 +20,34 @@ echo "=== Clack Voice Relay Setup ==="
 echo "Install dir: $INSTALL_DIR"
 echo "Port: $PORT"
 
-# Collect required env vars
+# Read OpenClaw config automatically
+OPENCLAW_CONFIG="${HOME}/.openclaw/openclaw.json"
+if [[ -f "$OPENCLAW_CONFIG" ]]; then
+  echo "Found OpenClaw config: $OPENCLAW_CONFIG"
+  if command -v python3 &>/dev/null; then
+    _GW_TOKEN=$(python3 -c "import json; c=json.load(open('$OPENCLAW_CONFIG')); print(c.get('gateway',{}).get('auth',{}).get('token',''))" 2>/dev/null)
+    _GW_PORT=$(python3 -c "import json; c=json.load(open('$OPENCLAW_CONFIG')); print(c.get('gateway',{}).get('port',18789))" 2>/dev/null)
+    [[ -n "$_GW_TOKEN" ]] && OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-$_GW_TOKEN}"
+    OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${_GW_PORT:-18789}}"
+    echo "  Gateway: $OPENCLAW_GATEWAY_URL (token: auto-detected)"
+  fi
+else
+  echo "No OpenClaw config found at $OPENCLAW_CONFIG"
+  if [[ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]]; then
+    read -rp "OpenClaw gateway token: " OPENCLAW_GATEWAY_TOKEN
+  fi
+  OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:18789}"
+fi
+
+if [[ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]]; then
+  echo "ERROR: Could not determine OpenClaw gateway token"
+  exit 1
+fi
+
+# ElevenLabs key — only thing the user needs to provide
 if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
   read -rp "ElevenLabs API key: " ELEVENLABS_API_KEY
 fi
-if [[ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]]; then
-  read -rp "OpenClaw gateway token: " OPENCLAW_GATEWAY_TOKEN
-fi
-OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:18789}"
 
 # Generate relay auth token if not set
 if [[ -z "${RELAY_AUTH_TOKEN:-}" ]]; then
