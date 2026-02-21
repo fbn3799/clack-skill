@@ -80,17 +80,10 @@ else
   echo "  Deepgram: ✓ (from env)"
 fi
 
-# Need at least one provider for TTS
 if [[ -z "${OPENAI_API_KEY:-}" && -z "${ELEVENLABS_API_KEY:-}" && -z "${DEEPGRAM_API_KEY:-}" ]]; then
   echo ""
-  echo "ERROR: At least one API key is required."
-  exit 1
-fi
-
-if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-  echo ""
-  echo "⚠️  No OpenAI key — server-side STT (Whisper) won't be available."
-  echo "   Users can still use on-device STT from the iOS app."
+  echo "ℹ️  No provider keys set — server-side STT/TTS won't be available."
+  echo "   Users can still use on-device STT/TTS from the iOS app."
 fi
 
 # ── Auth token ──
