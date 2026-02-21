@@ -1,8 +1,14 @@
 # Clack — Voice Relay for OpenClaw
 
+<p align="center">
+  <img src="website/assets/app-icon-256.png" alt="Clack" width="128" height="128" style="border-radius: 24px;">
+</p>
+
 > Talk to your AI assistant by voice. Real-time, self-hosted, private.
 
 Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that sets up a WebSocket voice relay server. It bridges voice input through speech-to-text → your OpenClaw agent → text-to-speech, enabling natural voice conversations.
+
+📱 **[iOS app available on the App Store](https://clack-app.com)** · 🤖 Android coming soon!
 
 ## Quickstart
 
