@@ -1047,6 +1047,9 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                     session.audio_buffer = bytearray()
                     await session.send_json({"type": "response_end"})
                 elif msg_type == "end_speech" and session:
+                    if session.local_stt:
+                        session.audio_buffer = bytearray()
+                        continue
                     if session.processing:
                         print(f"[WS] Ignoring end_speech — still processing")
                         session.audio_buffer = bytearray()
@@ -1112,7 +1115,8 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
             elif "bytes" in message and session:
                 if not authenticated:
                     continue
-                session.audio_buffer.extend(message["bytes"])
+                if not session.local_stt:
+                    session.audio_buffer.extend(message["bytes"])
     except WebSocketDisconnect:
         print(f"[WS] Client disconnected")
     except Exception as e:
