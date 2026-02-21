@@ -247,7 +247,9 @@ NGEOF
     CONNECT_URL="wss://$DOMAIN/voice"
   fi
 else
-  CONNECT_URL="ws://$SERVER_IP:$PORT/voice"
+  # No domain — detect Tailscale
+  TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
+  CONNECT_URL=""
 fi
 
 # ── Done ──
@@ -260,21 +262,41 @@ echo ""
 echo "  Service:  systemctl status clack"
 echo "  Logs:     journalctl -u clack -f"
 echo ""
-echo "  ┌─────────────────────────────────────────┐"
-echo "  │ Connection URL:                         │"
-echo "  │ $CONNECT_URL"
-echo "  │                                         │"
-echo "  │ Auth Token:                             │"
-echo "  │ $RELAY_AUTH_TOKEN"
-echo "  └─────────────────────────────────────────┘"
+echo "  Auth Token: $RELAY_AUTH_TOKEN"
 echo ""
-if [[ "$CONNECT_URL" == ws://* ]]; then
-  echo "  ⚠️  No domain configured — using unencrypted ws://"
-  echo "  For encryption, re-run with a domain:"
-  echo "    bash scripts/setup.sh --domain clack.yourdomain.com"
+
+if [[ -n "$CONNECT_URL" ]]; then
+  # Domain mode — WSS
+  echo "  ┌─────────────────────────────────────────┐"
+  echo "  │ Domain mode (WSS):                      │"
+  echo "  │ Server: $DOMAIN"
+  echo "  │ Connection: Domain (SSL)                │"
+  echo "  └─────────────────────────────────────────┘"
+elif [[ -n "${TAILSCALE_IP:-}" ]]; then
+  # Tailscale available
+  echo "  ┌─────────────────────────────────────────┐"
+  echo "  │ Tailscale mode:                         │"
+  echo "  │ Server: $TAILSCALE_IP"
+  echo "  │ Port: $PORT"
+  echo "  │ Connection: Tailscale                   │"
+  echo "  └─────────────────────────────────────────┘"
   echo ""
-  echo "  Or use Tailscale for encrypted connections without a domain."
+  echo "  For domain mode (WSS), re-run with:"
+  echo "    bash scripts/setup.sh --domain clack.yourdomain.com"
+else
+  # Neither domain nor Tailscale
+  echo "  ⚠️  No encrypted connection method available!"
+  echo ""
+  echo "  Clack requires encrypted connections. Choose one:"
+  echo ""
+  echo "  1. Domain (WSS) — re-run with a domain pointing to this server:"
+  echo "     bash scripts/setup.sh --domain clack.yourdomain.com"
+  echo ""
+  echo "  2. Tailscale — install Tailscale for encrypted P2P connections:"
+  echo "     curl -fsSL https://tailscale.com/install.sh | sh"
+  echo "     tailscale up"
+  echo "     Then use your Tailscale IP in the app (port $PORT)."
 fi
 echo ""
-echo "  Enter the URL and token in the Clack iOS app to connect."
+echo "  Enter the connection details and token in the Clack iOS app."
 echo ""
