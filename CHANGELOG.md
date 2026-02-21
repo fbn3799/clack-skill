@@ -1,5 +1,50 @@
 # Changelog
 
+## 1.2.0 (2026-06-22)
+
+### Features
+- **Per-session provider selection**: STT and TTS providers can be chosen independently per call via `sttProvider` and `ttsProvider` in the session start config
+- **Auto-detection of available providers**: Server detects all configured API keys at startup and exposes them via `GET /info`
+- **`GET /info` endpoint**: Returns agent name, available STT providers, available TTS providers, and defaults
+- **`CLACK_AGENT_NAME` env var**: Configurable agent name shown in the iOS app (default: "Storm")
+- **Mixed provider combos**: Use on-device STT with cloud TTS (or any combination) — no longer all-or-nothing
+
+### App Changes
+- **Voice Processing settings page**: New dedicated page with independent STT/TTS provider pickers
+- **Dynamic provider list**: App fetches available providers from server and shows them as options alongside "On-Device"
+- **Settings reorder**: Voice Detection → Context → Behavior
+- **Server section**: Green checkmark when paired
+- **Voice picker**: Only shown when TTS is not set to on-device
+
+### Protocol
+- Added `sttProvider` and `ttsProvider` fields to session start config
+- `GET /info` returns `{ agentName, stt: { available, default }, tts: { available, default } }`
+
+---
+
+## 1.1.0 (2026-02-20)
+
+### Security
+- Rate-limited pairing: 5 attempts per IP per 5 minutes, 2-second delay on failed attempts
+- Auth token required for all endpoints except `GET /health` and `POST /pair`
+
+### Features
+- **Session key prefix**: Each voice call creates a `clack:<uuid>` session in OpenClaw (isolated per call)
+- **Echo test mode**: Server-wide via `CLACK_ECHO_MODE=true` env var, or per-session via client config
+- **Local speech mode**: On-device STT/TTS support via `text_input` message type — only LLM calls go through server, zero speech API usage
+- **Audio normalization**: Peak normalization with capped gain for echo mode playback
+- **Interrupt/TTS cancellation**: Cancel in-progress TTS for all providers (ElevenLabs, OpenAI, Deepgram)
+- **`GET /sessions` endpoint**: List active sessions
+- **Conversation history persistence**: Shared history file across calls (configurable via `CLACK_HISTORY_DIR`), up to 50 messages (configurable via `CLACK_MAX_HISTORY`)
+- **Input length limit**: Server-side 300-char max (`CLACK_MAX_INPUT_CHARS`) — transcripts exceeding this are truncated
+- **AI response rules**: 1–3 sentences enforced, `max_tokens` capped at 150
+
+### Protocol
+- Added `text_input` client message type for local speech mode
+- Added `interrupt` client message type for TTS cancellation
+- Added `tts_cancelled` server message type
+- Added `echo` option to session start config
+
 ## 1.0.0 (2026-02-20)
 
 ### Features

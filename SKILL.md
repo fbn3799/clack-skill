@@ -1,7 +1,7 @@
 ---
 name: clack
-version: 1.0.0
-description: Deploy and manage Clack, a voice relay server for OpenClaw. Bridges voice input (WebSocket) through STT → OpenClaw agent → TTS, enabling real-time voice conversations with your agent. Supports ElevenLabs, OpenAI, and Deepgram for STT/TTS. Use when a user wants to set up voice chat, voice relay, voice interface, Clack, or talk to their agent by voice.
+version: 1.2.0
+description: Deploy and manage Clack, a voice relay server for OpenClaw. Bridges voice input (WebSocket) through STT → OpenClaw agent → TTS, enabling real-time voice conversations with your agent. Supports ElevenLabs, OpenAI, and Deepgram for STT/TTS. Per-session provider selection — users can independently choose STT and TTS providers (including on-device) from the app settings. Use when a user wants to set up voice chat, voice relay, voice interface, Clack, or talk to their agent by voice.
 ---
 
 # Clack
@@ -10,12 +10,15 @@ WebSocket relay server that enables real-time voice conversations with an OpenCl
 
 **Flow:** Client audio (PCM 16kHz/16-bit/mono) → STT → OpenClaw Gateway → TTS → PCM audio back to client.
 
+**Per-session provider selection:** The client can independently choose STT and TTS providers per call — any combination of on-device (Apple speech frameworks) and server-side providers (ElevenLabs, OpenAI, Deepgram). The server auto-detects all available providers based on configured API keys and exposes them via `/info`.
+
 ## Prerequisites
 
 - Python 3.10+
-- API key for at least one provider (ElevenLabs, OpenAI, or Deepgram)
+- API key for at least one provider (ElevenLabs, OpenAI, or Deepgram) — not needed for local speech mode
 - OpenClaw Gateway with `chatCompletions` endpoint enabled
 - Root/sudo access (for systemd)
+- **Port 9878** must be open (or your chosen port)
 
 ## Setup
 
@@ -82,17 +85,115 @@ bash scripts/setup.sh --domain clack.yourdomain.com
 
 The Clack iOS app is available on the App Store (or build from source at [github.com/fbn3799/clack-app](https://github.com/fbn3799/clack-app)).
 
+## Security
+
+### Authentication
+All endpoints except `GET /health` and `POST /pair` require a valid auth token (`RELAY_AUTH_TOKEN`). Tokens are verified using constant-time HMAC comparison to prevent timing attacks.
+
+### Pairing System
+- **6-character alphanumeric** one-time codes (~2.1 billion combinations)
+- Codes expire after **5 minutes** (TTL) and are single-use
+- **Rate limited:** 5 attempts per IP per 5 minutes — returns HTTP 429 after
+- **2-second delay** on failed attempts to slow brute force
+- Generating a code requires the admin auth token (`GET /pair`)
+- Redeeming a code is public but rate-limited (`POST /pair`)
+
+### Data Privacy
+- No analytics, tracking, or telemetry
+- Voice audio streams directly to your server — never through third-party relays
+- The iOS app stores only settings locally (server address, token, preferences)
+- Third-party API usage depends on your provider config (ElevenLabs, OpenAI, Deepgram)
+
+## Session Routing
+
+Each voice call creates a **`clack:<uuid>`** session in OpenClaw. These are small, isolated sessions — one per call — so voice conversations don't pollute your main agent context.
+
+### Session Picker
+The session picker in the iOS app provides **context injection only**. When you select a session key, it is added as text context to the LLM prompt — it does not change routing. All voice calls still create their own `clack:<uuid>` session.
+
+## Conversation History
+
+The relay maintains a **shared history file** across calls for continuity. History is stored as JSON in `CLACK_HISTORY_DIR` (default: `/var/lib/clack/history`).
+
+- **Max messages:** 50 (configurable via `CLACK_MAX_HISTORY`)
+- History persists across calls and server restarts
+- Viewable via `GET /history`, clearable via `DELETE /history`
+
+## Echo Test Mode
+
+For testing audio round-trips without using LLM credits:
+
+- **Server-wide:** Set `CLACK_ECHO_MODE=true` environment variable
+- **Per-session:** Send `{"type":"start","config":{"echo":true}}` from the client
+
+In echo mode, transcribed text is echoed back through TTS instead of being sent to the LLM. Audio is **peak-normalized** with capped gain to ensure consistent playback volume.
+
+## Provider Selection
+
+STT and TTS providers can be configured independently per session. The server auto-detects all available providers at startup based on which API keys are set (`ELEVENLABS_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`).
+
+### Available modes per direction (STT / TTS):
+- **On-device (local):** Uses Apple's built-in speech frameworks. Zero API costs.
+- **Server provider:** ElevenLabs, OpenAI, or Deepgram — whichever keys are configured.
+
+### How it works:
+1. App fetches `GET /info` to discover available providers
+2. User picks STT and TTS providers independently in Settings → Voice
+3. On call start, the app sends `sttProvider` and `ttsProvider` in the session config
+4. Server creates the appropriate provider instances per session
+
+### Example combinations:
+| STT | TTS | Use case |
+|-----|-----|----------|
+| ElevenLabs | ElevenLabs | Full cloud — best quality |
+| On-device | ElevenLabs | Save STT costs, keep premium voices |
+| On-device | On-device | Fully local — zero API usage, works offline |
+| OpenAI | Deepgram | Mix providers freely |
+
+**Cost optimization:** Use on-device STT (free, unlimited) with a premium cloud TTS voice — get great output quality while eliminating transcription costs entirely. Or go fully on-device for zero API spend.
+
+### Text input mode
+When STT is set to on-device, the client sends transcribed text instead of audio:
+
+```json
+{"type": "text_input", "text": "What's the weather like?"}
+```
+
+When TTS is set to on-device, the server returns `response_text` only and skips audio synthesis.
+
+## AI Response Rules
+
+- Responses are enforced to **1–3 sentences** for natural voice conversation
+- Server-side **max_tokens: 150** to prevent runaway responses
+- Server-side **max input: 300 characters** (`CLACK_MAX_INPUT_CHARS`) — transcripts exceeding this are truncated
+
+## HTTP Endpoints
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `GET /health` | GET | No | Health check — returns service status |
+| `POST /pair` | POST | No | Redeem pairing code → get auth token (rate-limited) |
+| `GET /pair` | GET | Yes | Generate one-time pairing code |
+| `GET /info` | GET | Yes | Server info: agent name, available STT/TTS providers |
+| `GET /voices` | GET | Yes | List available TTS voices |
+| `GET /sessions` | GET | Yes | List active sessions |
+| `GET /history` | GET | Yes | Get conversation history |
+| `DELETE /history` | DELETE | Yes | Clear conversation history |
+| `WebSocket /ws` | WS | Yes | Voice relay connection |
+
 ## WebSocket Protocol
 
-**Endpoint:** `ws://<host>:<port>/voice?token=<RELAY_AUTH_TOKEN>`
+**Endpoint:** `ws://<host>:<port>/ws?token=<RELAY_AUTH_TOKEN>`
 
 ### Client → Server
 
 | Message | Format | Description |
 |---------|--------|-------------|
-| `{"type":"start","config":{...}}` | JSON | Start session. Config: `voice`, `systemPrompt` |
+| `{"type":"start","config":{...}}` | JSON | Start session. Config: `voice`, `systemPrompt`, `echo`, `sttProvider`, `ttsProvider` |
 | Binary frames | bytes | Raw PCM audio (16kHz, 16-bit, mono) |
+| `{"type":"text_input","text":"..."}` | JSON | Local speech mode — send text directly |
 | `{"type":"end_speech"}` | JSON | Signal end of speech, triggers processing |
+| `{"type":"interrupt"}` | JSON | Cancel current TTS playback |
 | `{"type":"ping"}` | JSON | Keepalive |
 | `{"type":"auth","token":"..."}` | JSON | Authenticate (alternative to query param) |
 
@@ -108,32 +209,29 @@ The Clack iOS app is available on the App Store (or build from source at [github
 | `{"type":"response_start","format":"pcm_16000"}` | JSON | Audio stream starting |
 | Binary frames | bytes | TTS audio (PCM 16kHz, 16-bit, mono) |
 | `{"type":"response_end"}` | JSON | Audio stream done |
-
-## HTTP Endpoints
-
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/` | GET | No | Service status |
-| `/health` | GET | No | Health check |
-| `/voices` | GET | Yes | List available voices |
-| `/pair` | GET | Yes | Generate one-time pairing code |
-| `/pair` | POST | No | Redeem pairing code → get auth token |
-| `/history` | GET | Yes | Get conversation history |
-| `/history` | DELETE | Yes | Clear conversation history |
+| `{"type":"tts_cancelled"}` | JSON | TTS playback was interrupted |
 
 ## Features
 
 - **Multi-provider STT/TTS**: ElevenLabs, OpenAI, and Deepgram support
-- **Voice response rules**: AI responses are enforced short (1-3 sentences) for natural conversation
+- **Independent voice input/output configuration**: Choose STT and TTS providers separately — full control over how your voice is transcribed and how the AI speaks back
+- **On-device speech**: Apple speech frameworks for STT and/or TTS — zero API costs, mix with cloud providers freely
+- **Cost optimization**: Use free on-device transcription with premium cloud voices, or go fully local for zero spend
+- **Voice response rules**: AI responses enforced short (1-3 sentences, max_tokens 150)
 - **Input length limiting**: Configurable max transcript length (default 300 chars)
 - **Confidence filtering**: Low-confidence STT results are discarded
 - **Echo detection**: Prevents feedback loops (TTS → mic → STT)
+- **Echo test mode**: Test audio pipeline without LLM (server-wide or per-session)
+- **Audio normalization**: Peak normalization with capped gain for echo mode playback
 - **Audio chunking**: Long recordings auto-split for reliable transcription
 - **Hallucination detection**: Filters repetitive/nonsense STT output
-- **Pairing system**: One-time codes for secure device pairing
-- **Conversation history**: Persistent across sessions with configurable depth
+- **Interrupt/TTS cancellation**: Cancel in-progress TTS for all providers
+- **Pairing system**: Rate-limited one-time codes for secure device pairing
+- **Session isolation**: Each call gets its own `clack:<uuid>` session
+- **Conversation history**: Shared across calls, 50 messages max, persistent
 - **Token auth**: Constant-time HMAC verification
 - **Keepalive pings**: Prevents client timeout during long LLM responses
+- **Silence detection**: Default threshold 220, configurable range 20–1000
 - **Auto-restart**: systemd restarts on crash
 
 ## Voice Configuration
@@ -150,16 +248,18 @@ Available aliases: will, aria, roger, sarah, laura, charlie, george, callum, riv
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STT_PROVIDER` | `elevenlabs` | STT provider |
-| `TTS_PROVIDER` | `elevenlabs` | TTS provider |
+| `RELAY_AUTH_TOKEN` | — | **Required.** Client auth token (32-char) |
+| `OPENCLAW_GATEWAY_URL` | `http://127.0.0.1:18789` | OpenClaw Gateway URL |
+| `OPENCLAW_GATEWAY_TOKEN` | — | Gateway bearer token |
+| `STT_PROVIDER` | `elevenlabs` | STT provider (`elevenlabs`, `openai`, `deepgram`) |
+| `TTS_PROVIDER` | `elevenlabs` | TTS provider (`elevenlabs`, `openai`, `deepgram`) |
+| `TTS_VOICE` | `bIHbv24MWmeRgasZH58o` | Default voice ID or alias |
 | `ELEVENLABS_API_KEY` | — | ElevenLabs API key |
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `DEEPGRAM_API_KEY` | — | Deepgram API key |
-| `OPENCLAW_GATEWAY_URL` | `http://127.0.0.1:18789` | Gateway URL |
-| `OPENCLAW_GATEWAY_TOKEN` | — | Gateway bearer token |
-| `RELAY_AUTH_TOKEN` | — | Client auth token |
 | `VOICE_RELAY_PORT` | `9878` | Server port |
-| `TTS_VOICE` | `bIHbv24MWmeRgasZH58o` | Voice ID or alias |
-| `CLACK_MAX_INPUT_CHARS` | `300` | Max transcript length |
-| `CLACK_HISTORY_DIR` | `/var/lib/clack/history` | History storage |
-| `CLACK_MAX_HISTORY` | `50` | Max history messages |
+| `CLACK_ECHO_MODE` | `false` | Enable echo test mode server-wide |
+| `CLACK_MAX_INPUT_CHARS` | `300` | Max transcript length (chars) |
+| `CLACK_HISTORY_DIR` | `/var/lib/clack/history` | History file storage directory |
+| `CLACK_MAX_HISTORY` | `50` | Max conversation history messages |
+| `CLACK_AGENT_NAME` | `Storm` | Agent name shown in the iOS app |
