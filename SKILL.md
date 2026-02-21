@@ -1,7 +1,7 @@
 ---
 name: clack
-version: 1.2.0
-description: Deploy and manage Clack, a voice relay server for OpenClaw. Bridges voice input (WebSocket) through STT → OpenClaw agent → TTS, enabling real-time voice conversations with your agent. Supports ElevenLabs, OpenAI, and Deepgram for STT/TTS. Per-session provider selection — users can independently choose STT and TTS providers (including on-device) from the app settings. Use when a user wants to set up voice chat, voice relay, voice interface, Clack, or talk to their agent by voice.
+version: 1.3.0
+description: Deploy and manage Clack, a voice relay server for OpenClaw. Bridges voice input (WebSocket) through STT → OpenClaw agent → TTS, enabling real-time voice conversations with your agent. Supports ElevenLabs, OpenAI, and Deepgram for STT/TTS. Per-session provider selection — users can independently choose STT and TTS providers (including on-device) from the app settings. Encrypted connections via Domain (SSL) or Tailscale. Supports local speech mode where STT/TTS run on-device and only LLM calls go through the server. Use when a user wants to set up voice chat, voice relay, voice interface, Clack, or talk to their agent by voice.
 ---
 
 # Clack
@@ -18,7 +18,7 @@ WebSocket relay server that enables real-time voice conversations with an OpenCl
 - API key for at least one provider (ElevenLabs, OpenAI, or Deepgram) — not needed for local speech mode
 - OpenClaw Gateway with `chatCompletions` endpoint enabled
 - Root/sudo access (for systemd)
-- **Port 9878** must be open (or your chosen port)
+- **Secure connection**: Domain with SSL (recommended) or Tailscale
 
 ## Setup
 
@@ -48,19 +48,23 @@ bash scripts/setup.sh [--port 9878] [--install-dir /opt/clack] [--domain clack.e
 
 ### Connection modes
 
-**With domain (recommended):**
+All connections are encrypted. The app supports two modes:
+
+**Domain with SSL (recommended):**
 ```bash
 bash scripts/setup.sh --domain clack.yourdomain.com
 # → wss://clack.yourdomain.com/voice
 ```
-Requires a DNS A record pointing the domain to your server IP. The script auto-configures SSL via Caddy or nginx + certbot. Encrypted, no port number needed.
+Requires a DNS A record pointing the domain to your server IP. The setup script auto-configures SSL via Caddy. You can use a free domain from [DuckDNS](https://www.duckdns.org) or your own.
 
-**Without domain:**
+**Tailscale:**
 ```bash
-bash scripts/setup.sh
-# → ws://<your-ip>:9878/voice
+# Install Tailscale on your server, then connect from the app using your Tailscale IP
+# → ws://100.x.x.x:9878/voice (encrypted at network level)
 ```
-Works immediately but the connection is unencrypted. You can add SSL later by re-running with `--domain`.
+No domain or SSL setup needed. Tailscale encrypts all traffic at the network layer. Install Tailscale on both your server and phone, then use the server's Tailscale IP in the app.
+
+**Security note:** Port 9878 should be firewalled from the public internet. Only allow access via localhost (for Caddy reverse proxy) and Tailscale. The app does not support unencrypted public connections.
 
 ### Enable OpenClaw Gateway endpoint
 
@@ -83,7 +87,8 @@ bash scripts/setup.sh --domain clack.yourdomain.com
 
 ## Client App
 
-The Clack iOS app is available on the App Store (or build from source at [github.com/fbn3799/clack-app](https://github.com/fbn3799/clack-app)).
+📱 **iOS** — Available on the [App Store](https://clack-app.com) (or build from source at [github.com/fbn3799/clack-app](https://github.com/fbn3799/clack-app))
+🤖 **Android** — Coming soon!
 
 ## Security
 
@@ -98,9 +103,15 @@ All endpoints except `GET /health` and `POST /pair` require a valid auth token (
 - Generating a code requires the admin auth token (`GET /pair`)
 - Redeeming a code is public but rate-limited (`POST /pair`)
 
+### Encrypted Connections
+- **Domain mode:** WSS (WebSocket Secure) via Caddy with automatic SSL certificates
+- **Tailscale mode:** WireGuard encryption at the network layer
+- The app enforces encrypted connections — no unencrypted public access
+- Port 9878 should be firewalled; only accessible via localhost and Tailscale
+
 ### Data Privacy
 - No analytics, tracking, or telemetry
-- Voice audio streams directly to your server — never through third-party relays
+- Voice audio goes to your server and only to the providers you choose
 - The iOS app stores only settings locally (server address, token, preferences)
 - Third-party API usage depends on your provider config (ElevenLabs, OpenAI, Deepgram)
 

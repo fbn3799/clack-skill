@@ -18,9 +18,10 @@ Talk to your AI — on your terms.
 
 Clack is a voice interface for self-hosted AI assistants. Your voice goes directly to YOUR server. No middleman. No cloud. No data harvesting.
 
-🔒 PRIVATE BY DESIGN
+🔒 PRIVATE & ENCRYPTED BY DESIGN
 
-• Your voice never touches our servers — audio streams directly to your own infrastructure
+• All connections encrypted — Domain with SSL or Tailscale, no unencrypted public access
+• Your voice goes to your server and only to the providers you choose — we never see your data
 • Zero analytics, zero tracking, zero telemetry
 • No account required — pair with a 6-digit code and go
 • Auth tokens use constant-time HMAC verification to prevent timing attacks
@@ -64,7 +65,7 @@ On-device speech recognition is free and unlimited. Use it for transcription whi
 3. Enter your server address and pair with a one-time code
 4. Tap the call button and start talking
 
-Works over WiFi, cellular, or any network. Secure WebSocket (WSS) encryption available with your own domain.
+Works over WiFi, cellular, or any network. Two secure connection options: Domain with automatic SSL, or Tailscale for zero-config encryption.
 
 🔧 FULL CONTROL
 

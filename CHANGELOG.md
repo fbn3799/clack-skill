@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.3.0 (2026-02-21)
+
+### Security
+- **Encrypted connections only**: App now supports Domain (SSL/WSS) and Tailscale modes — unencrypted public connections removed
+- **Port hardening**: Port 9878 should be firewalled; documentation updated with iptables rules for localhost + Tailscale only
+- **Multi-provider voice selection**: OpenAI (9 voices) and Deepgram (12 Aura voices) with aliases, alongside existing ElevenLabs voices
+
+### Features
+- **Tailscale support**: Connect via Tailscale IP with WireGuard encryption at the network layer
+- **Domain mode**: WSS on port 443 via Caddy reverse proxy with automatic SSL
+- **Configurable port**: Custom port setting in server settings (Tailscale mode)
+- **Security info page**: New "Info & Legal" section with Security, Setup Guide, Before You Start, Terms, and Privacy
+- **Context save button**: Explicit save for session context field
+- **App icon**: Real app icon on website and README
+
+### Removed
+- Auto-reconnect on disconnect (was causing reliability issues)
+- Unencrypted (WS) connection option for public IPs
+
+### App Changes
+- Connection picker: "Domain (SSL)" and "Tailscale" replace old Auto/WSS/WS options
+- Port field only visible in Tailscale mode
+- "Info & Legal" replaces "Legal" with Security and Setup Guide sub-pages
+- Removed reconnecting indicator from UI
+
+---
+
 ## 1.2.0 (2026-06-22)
 
 ### Features

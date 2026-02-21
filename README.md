@@ -28,8 +28,9 @@ Your agent will clone the repo, run the setup script, and configure everything. 
 - 📱 **On-device speech**: Apple speech frameworks for STT and/or TTS — works offline, no API keys needed
 - 🗣️ **20 built-in ElevenLabs voices** with easy aliases
 - 🧠 **Conversation memory**: Persisted across calls (up to 50 messages)
-- 🔒 **Secure pairing**: Rate-limited one-time codes with 5-minute expiry
-- 🏠 **Self-hosted**: All data flows through YOUR server — no third-party relays
+- 🔒 **Encrypted connections**: Domain with SSL or Tailscale — no unencrypted public access
+- 🔐 **Secure pairing**: Rate-limited one-time codes with 5-minute expiry
+- 🏠 **Self-hosted**: Your server, your providers, your data
 - 🎯 **Session isolation**: Each call gets its own `clack:<uuid>` session
 - ⚡ **Interrupt support**: Cancel TTS mid-sentence for natural conversation
 - 🔇 **Echo test mode**: Test your audio pipeline without using LLM credits
@@ -61,17 +62,27 @@ This will:
 - Generate a `RELAY_AUTH_TOKEN` if not set
 - Configure a systemd service on port **9878**
 
-### 4. (Recommended) Add SSL
+### 4. Connect securely
 
+All connections are encrypted. Choose one:
+
+**Option A: Domain with SSL (recommended)**
 ```bash
 bash scripts/setup.sh --domain clack.yourdomain.com
 ```
+Requires a DNS A record pointing to your server. Auto-configures SSL via Caddy. Works with free [DuckDNS](https://www.duckdns.org) domains too.
 
-Requires a DNS A record pointing to your server. Auto-configures SSL via Caddy or nginx + certbot.
+**Option B: Tailscale**
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh && tailscale up
+```
+Install Tailscale on your server and phone. Use the server's Tailscale IP (e.g. `100.x.x.x`) in the app. No domain or SSL setup needed.
+
+**Firewall port 9878** from the public internet — only allow localhost and Tailscale access.
 
 ### 5. Pair the iOS app
 
-1. Open the Clack iOS app ([App Store](https://github.com/fbn3799/clack-app) or build from source)
+1. Open the Clack iOS app ([App Store](https://clack-app.com) or build from source)
 2. On your server, generate a pairing code: the app will guide you, or ask your OpenClaw agent
 3. Enter the 6-character code in the app within 5 minutes
 4. The app receives an auth token and connects automatically
@@ -101,12 +112,14 @@ All configuration is via environment variables (set in your systemd service or `
 
 ## Security
 
+- **Encrypted connections only**: Domain with SSL (WSS) or Tailscale (WireGuard) — the app does not support unencrypted public connections
+- **Port 9878 should be firewalled**: Only allow access via localhost (for Caddy) and Tailscale
 - **Auth token** required for all endpoints except `GET /health` and `POST /pair`
 - **Pairing is rate-limited**: 5 attempts per IP per 5 minutes, 2s delay on failure
 - **One-time codes**: 6-character alphanumeric, expire after 5 minutes, single-use
 - **Constant-time** token verification (HMAC) to prevent timing attacks
 - **No telemetry**: Zero analytics, tracking, or data sent to developers
-- **Voice audio** streams directly to your server — never through third-party relays
+- **Voice audio** goes to your server and only to the providers you choose
 - The iOS app stores only local settings (server address, token, preferences)
 
 ## How It Works
