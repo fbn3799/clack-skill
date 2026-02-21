@@ -77,6 +77,16 @@ def _is_echo(transcript: str, last_response: str) -> bool:
     return False
 
 
+# ── Provider Errors ──
+
+class ProviderError(Exception):
+    """Raised when an API provider returns an error (auth, quota, etc.)."""
+    def __init__(self, provider: str, status: int, message: str = ""):
+        self.provider = provider
+        self.status = status
+        self.message = message
+        super().__init__(f"[{provider}] HTTP {status}: {message}")
+
 # ── STT Providers ──
 
 class STTProvider(ABC):
@@ -105,8 +115,9 @@ class ElevenLabsSTT(STTProvider):
                 data=form
             ) as resp:
                 if resp.status != 200:
-                    print(f"[STT/11labs] Error: {resp.status} - {await resp.text()}")
-                    return None
+                    err_text = await resp.text()
+                    print(f"[STT/11labs] Error: {resp.status} - {err_text}")
+                    raise ProviderError("ElevenLabs STT", resp.status, err_text)
                 result = await resp.json()
                 lang_prob = result.get("language_probability", 0)
                 text = result.get("text", "").strip()
@@ -169,8 +180,9 @@ class OpenAISTT(STTProvider):
                 data=form
             ) as resp:
                 if resp.status != 200:
-                    print(f"[STT/openai] Error: {resp.status} - {await resp.text()}")
-                    return None
+                    err_text = await resp.text()
+                    print(f"[STT/openai] Error: {resp.status} - {err_text}")
+                    raise ProviderError("OpenAI STT", resp.status, err_text)
                 result = await resp.json()
                 text = result.get("text", "").strip()
                 print(f"[STT/openai] Text: '{text[:200]}'")
@@ -193,8 +205,9 @@ class DeepgramSTT(STTProvider):
                 data=wav_data
             ) as resp:
                 if resp.status != 200:
-                    print(f"[STT/deepgram] Error: {resp.status} - {await resp.text()}")
-                    return None
+                    err_text = await resp.text()
+                    print(f"[STT/deepgram] Error: {resp.status} - {err_text}")
+                    raise ProviderError("Deepgram STT", resp.status, err_text)
                 result = await resp.json()
                 alt = result.get("results", {}).get("channels", [{}])[0].get("alternatives", [{}])[0]
                 text = alt.get("transcript", "").strip()
@@ -233,8 +246,9 @@ class ElevenLabsTTS(TTSProvider):
                 json=payload
             ) as resp:
                 if resp.status != 200:
-                    print(f"[TTS/11labs] Error: {resp.status} - {await resp.text()}")
-                    return False
+                    err_text = await resp.text()
+                    print(f"[TTS/11labs] Error: {resp.status} - {err_text}")
+                    raise ProviderError("ElevenLabs TTS", resp.status, err_text)
                 total = 0
                 buf = bytearray()
                 CHUNK_SIZE = 16000
@@ -272,8 +286,9 @@ class OpenAITTS(TTSProvider):
                 json=payload
             ) as resp:
                 if resp.status != 200:
-                    print(f"[TTS/openai] Error: {resp.status} - {await resp.text()}")
-                    return False
+                    err_text = await resp.text()
+                    print(f"[TTS/openai] Error: {resp.status} - {err_text}")
+                    raise ProviderError("OpenAI TTS", resp.status, err_text)
                 # OpenAI returns 24kHz PCM, we need to resample to 16kHz
                 total = 0
                 buf = bytearray()
@@ -308,8 +323,9 @@ class DeepgramTTS(TTSProvider):
                 json={"text": text}
             ) as resp:
                 if resp.status != 200:
-                    print(f"[TTS/deepgram] Error: {resp.status} - {await resp.text()}")
-                    return False
+                    err_text = await resp.text()
+                    print(f"[TTS/deepgram] Error: {resp.status} - {err_text}")
+                    raise ProviderError("Deepgram TTS", resp.status, err_text)
                 total = 0
                 buf = bytearray()
                 CHUNK_SIZE = 16000
@@ -743,7 +759,10 @@ class VoiceSession:
         if not self.local_tts:
             await self.send_json({"type": "response_start", "format": "pcm_16000"})
             if self.tts:
-                await self.tts.synthesize_stream(greeting[:500], self.send_audio)
+                try:
+                    await self.tts.synthesize_stream(greeting[:500], self.send_audio)
+                except ProviderError as e:
+                    await self.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
         await self.send_json({"type": "response_end"})
 
     async def get_llm_response(self, user_message: str) -> Optional[str]:
@@ -1013,7 +1032,10 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                                 await session.send_json({"type": "processing", "stage": "speaking"})
                                 await session.send_json({"type": "response_start", "format": "pcm_16000"})
                                 if session.tts:
-                                    await session.tts.synthesize_stream(response[:500], session.send_audio)
+                                    try:
+                                        await session.tts.synthesize_stream(response[:500], session.send_audio)
+                                    except ProviderError as e:
+                                        await session.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
                                 if not session.interrupted:
                                     await session.send_json({"type": "response_end"})
                             else:
@@ -1034,7 +1056,14 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                         session.processing = True
                         print(f"[WS] Processing {len(session.audio_buffer)} bytes")
                         await session.send_json({"type": "processing", "stage": "transcribing"})
-                        transcript = await session.transcribe_audio(bytes(session.audio_buffer))
+                        try:
+                            transcript = await session.transcribe_audio(bytes(session.audio_buffer))
+                        except ProviderError as e:
+                            await session.send_json({"type": "error", "message": f"STT failed: {e.provider} (HTTP {e.status})"})
+                            await session.send_json({"type": "response_end"})
+                            session.audio_buffer = bytearray()
+                            session.processing = False
+                            continue
                         if not transcript:
                             await session.send_json({"type": "processing", "stage": "filtered"})
                             await session.send_json({"type": "response_end"})
@@ -1067,7 +1096,10 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                                 await session.send_json({"type": "processing", "stage": "speaking"})
                                 await session.send_json({"type": "response_start", "format": "pcm_16000"})
                                 if session.tts:
-                                    await session.tts.synthesize_stream(response[:500], session.send_audio)
+                                    try:
+                                        await session.tts.synthesize_stream(response[:500], session.send_audio)
+                                    except ProviderError as e:
+                                        await session.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
                                 if not session.interrupted:
                                     await session.send_json({"type": "response_end"})
                             else:

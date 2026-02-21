@@ -87,9 +87,40 @@ else
   echo "  Deepgram: ✓ (from env)"
 fi
 
+# Validate keys
+if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  _STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1/models 2>/dev/null)
+  if [[ "$_STATUS" == "200" ]]; then
+    echo "  ✓ OpenAI key valid"
+  else
+    echo "  ✗ OpenAI key invalid (HTTP $_STATUS)"
+    unset OPENAI_API_KEY
+  fi
+fi
+
+if [[ -n "${ELEVENLABS_API_KEY:-}" ]]; then
+  _STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "xi-api-key: $ELEVENLABS_API_KEY" https://api.elevenlabs.io/v1/user 2>/dev/null)
+  if [[ "$_STATUS" == "200" ]]; then
+    echo "  ✓ ElevenLabs key valid"
+  else
+    echo "  ✗ ElevenLabs key invalid (HTTP $_STATUS)"
+    unset ELEVENLABS_API_KEY
+  fi
+fi
+
+if [[ -n "${DEEPGRAM_API_KEY:-}" ]]; then
+  _STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Token $DEEPGRAM_API_KEY" https://api.deepgram.com/v1/projects 2>/dev/null)
+  if [[ "$_STATUS" == "200" ]]; then
+    echo "  ✓ Deepgram key valid"
+  else
+    echo "  ✗ Deepgram key invalid (HTTP $_STATUS)"
+    unset DEEPGRAM_API_KEY
+  fi
+fi
+
 if [[ -z "${OPENAI_API_KEY:-}" && -z "${ELEVENLABS_API_KEY:-}" && -z "${DEEPGRAM_API_KEY:-}" ]]; then
   echo ""
-  echo "  ℹ️  No provider keys — server-side STT/TTS won't be available."
+  echo "  ℹ️  No valid provider keys — server-side STT/TTS won't be available."
   echo "     The app can still use on-device STT/TTS."
 fi
 
