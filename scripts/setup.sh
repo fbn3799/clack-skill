@@ -49,44 +49,48 @@ fi
 
 # ── API keys (at least one TTS provider needed) ──
 
-HAS_PROVIDER=false
-if [[ -n "${ELEVENLABS_API_KEY:-}" ]]; then
-  HAS_PROVIDER=true
-  echo "  ElevenLabs: ✓ (from env)"
-fi
-if [[ -n "${OPENAI_API_KEY:-}" ]]; then
-  HAS_PROVIDER=true
+# ── API keys ──
+# Prompt for any keys not already in environment
+
+echo ""
+echo "API Keys (press Enter to skip any you don't have):"
+echo "  - OpenAI: Required for server-side STT (Whisper). Also provides TTS."
+echo "  - ElevenLabs: Premium TTS voices."
+echo "  - Deepgram: Alternative STT/TTS provider."
+echo ""
+
+if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+  read -rp "OpenAI API key: " _KEY
+  [[ -n "$_KEY" ]] && OPENAI_API_KEY="$_KEY"
+else
   echo "  OpenAI: ✓ (from env)"
 fi
-if [[ -n "${DEEPGRAM_API_KEY:-}" ]]; then
-  HAS_PROVIDER=true
+
+if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
+  read -rp "ElevenLabs API key: " _KEY
+  [[ -n "$_KEY" ]] && ELEVENLABS_API_KEY="$_KEY"
+else
+  echo "  ElevenLabs: ✓ (from env)"
+fi
+
+if [[ -z "${DEEPGRAM_API_KEY:-}" ]]; then
+  read -rp "Deepgram API key: " _KEY
+  [[ -n "$_KEY" ]] && DEEPGRAM_API_KEY="$_KEY"
+else
   echo "  Deepgram: ✓ (from env)"
 fi
 
-if [[ "$HAS_PROVIDER" == "false" ]]; then
+# Need at least one provider for TTS
+if [[ -z "${OPENAI_API_KEY:-}" && -z "${ELEVENLABS_API_KEY:-}" && -z "${DEEPGRAM_API_KEY:-}" ]]; then
   echo ""
-  echo "No TTS provider API key found in environment."
-  echo "You need at least one of: ELEVENLABS_API_KEY, OPENAI_API_KEY, DEEPGRAM_API_KEY"
-  echo ""
-  read -rp "ElevenLabs API key (or press Enter to skip): " _EL_KEY
-  if [[ -n "$_EL_KEY" ]]; then
-    ELEVENLABS_API_KEY="$_EL_KEY"
-  else
-    read -rp "OpenAI API key (required for STT, also provides TTS): " OPENAI_API_KEY
-    if [[ -z "$OPENAI_API_KEY" ]]; then
-      echo "ERROR: At least one API key is required"
-      exit 1
-    fi
-  fi
+  echo "ERROR: At least one API key is required."
+  exit 1
 fi
 
-# OpenAI is needed for STT (Whisper) unless using local STT
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
   echo ""
-  echo "Note: OpenAI API key not set. Server-side STT (Whisper) won't be available."
-  echo "Users can still use on-device STT from the app."
-  read -rp "OpenAI API key (Enter to skip): " _OAI_KEY
-  [[ -n "$_OAI_KEY" ]] && OPENAI_API_KEY="$_OAI_KEY"
+  echo "⚠️  No OpenAI key — server-side STT (Whisper) won't be available."
+  echo "   Users can still use on-device STT from the iOS app."
 fi
 
 # ── Auth token ──
