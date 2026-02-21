@@ -171,6 +171,17 @@ if [[ -n "$DOMAIN" ]]; then
     [[ "$_CONT" != "y" && "$_CONT" != "Y" ]] && { echo "Aborted."; exit 1; }
   fi
 
+  echo ""
+  echo "─────────────────────────────────────────────"
+  echo "  SSL requires ports 80 and 443 to be open."
+  echo "  If you're on AWS/GCP/Azure, make sure your"
+  echo "  security group / firewall allows inbound"
+  echo "  TCP on ports 80 and 443 from 0.0.0.0/0."
+  echo "─────────────────────────────────────────────"
+  read -rp "Ports 80 and 443 are open? (y/N): " _PORTS_OK
+  [[ "$_PORTS_OK" != "y" && "$_PORTS_OK" != "Y" ]] && { echo "Open the ports first, then re-run setup."; exit 1; }
+
+  echo ""
   echo "Setting up SSL for $DOMAIN..."
 
   # Install Caddy if no reverse proxy available
