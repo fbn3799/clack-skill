@@ -10,7 +10,7 @@ Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that sets up 
 - 🔊 **Independent voice input/output**: Choose STT and TTS providers separately — ElevenLabs, OpenAI, Deepgram, or on-device
 - 💰 **Cost-saving combos**: Free on-device transcription + premium cloud voices, or fully local for zero API spend
 - 📱 **On-device speech**: Apple speech frameworks for STT and/or TTS — works offline, no API keys needed
-- 🗣️ **20 built-in voices** with easy aliases
+- 🗣️ **20 built-in ElevenLabs voices** with easy aliases
 - 🧠 **Conversation memory**: Persisted across calls (up to 50 messages)
 - 🔒 **Secure pairing**: Rate-limited one-time codes with 5-minute expiry
 - 🏠 **Self-hosted**: All data flows through YOUR server — no third-party relays
