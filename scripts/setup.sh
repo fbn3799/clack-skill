@@ -60,9 +60,9 @@ fi
 
 echo ""
 echo "API Keys (press Enter to skip any you don't have):"
-echo "  - OpenAI: Required for server-side STT (Whisper). Also provides TTS."
-echo "  - ElevenLabs: Premium TTS voices."
-echo "  - Deepgram: Alternative STT/TTS provider."
+echo "  - OpenAI: STT (Whisper) and TTS."
+echo "  - ElevenLabs: STT and premium TTS voices."
+echo "  - Deepgram: STT and TTS."
 echo ""
 
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
