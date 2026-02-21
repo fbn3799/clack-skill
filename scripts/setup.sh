@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Clack Voice Relay — automated setup
-# Usage: bash scripts/setup.sh [--port 9878] [--domain clack.example.com]
+# Usage: sudo bash scripts/setup.sh [--port 9878] [--domain clack.example.com]
 set -euo pipefail
 
 PORT="${VOICE_RELAY_PORT:-9878}"
@@ -21,10 +21,17 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 echo "=== Clack Voice Relay Setup ==="
 echo "Skill dir: $SKILL_DIR"
 echo "Port: $PORT"
+echo ""
+
+# ── System dependencies ──
+
+echo "Installing system dependencies..."
+apt-get update -qq
+apt-get install -y -qq python3 python3-venv curl > /dev/null 2>&1
+echo "  ✓ Python 3 + venv"
 
 # ── OpenClaw config ──
 
-# Find OpenClaw config — check SUDO_USER's home first, then current HOME
 if [[ -n "${SUDO_USER:-}" ]]; then
   _REAL_HOME=$(eval echo "~$SUDO_USER")
 else
@@ -32,13 +39,12 @@ else
 fi
 OPENCLAW_CONFIG="${_REAL_HOME}/.openclaw/openclaw.json"
 if [[ -f "$OPENCLAW_CONFIG" ]]; then
-  echo "Found OpenClaw config: $OPENCLAW_CONFIG"
+  echo "  ✓ OpenClaw config found"
   if command -v python3 &>/dev/null; then
     _GW_TOKEN=$(python3 -c "import json; c=json.load(open('$OPENCLAW_CONFIG')); print(c.get('gateway',{}).get('auth',{}).get('token',''))" 2>/dev/null)
     _GW_PORT=$(python3 -c "import json; c=json.load(open('$OPENCLAW_CONFIG')); print(c.get('gateway',{}).get('port',18789))" 2>/dev/null)
     [[ -n "$_GW_TOKEN" ]] && OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-$_GW_TOKEN}"
     OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${_GW_PORT:-18789}}"
-    echo "  Gateway: $OPENCLAW_GATEWAY_URL (token: auto-detected)"
   fi
 else
   echo "No OpenClaw config found at $OPENCLAW_CONFIG"
@@ -53,34 +59,29 @@ if [[ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]]; then
   exit 1
 fi
 
-# ── API keys (at least one TTS provider needed) ──
-
 # ── API keys ──
-# Prompt for any keys not already in environment
 
 echo ""
 echo "API Keys (press Enter to skip any you don't have):"
-echo "  - OpenAI: STT (Whisper) and TTS."
-echo "  - ElevenLabs: STT and premium TTS voices."
-echo "  - Deepgram: STT and TTS."
+echo "  Each provider offers both STT and TTS."
 echo ""
 
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-  read -rp "OpenAI API key: " _KEY
+  read -rp "  OpenAI API key: " _KEY
   [[ -n "$_KEY" ]] && OPENAI_API_KEY="$_KEY"
 else
   echo "  OpenAI: ✓ (from env)"
 fi
 
 if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
-  read -rp "ElevenLabs API key: " _KEY
+  read -rp "  ElevenLabs API key: " _KEY
   [[ -n "$_KEY" ]] && ELEVENLABS_API_KEY="$_KEY"
 else
   echo "  ElevenLabs: ✓ (from env)"
 fi
 
 if [[ -z "${DEEPGRAM_API_KEY:-}" ]]; then
-  read -rp "Deepgram API key: " _KEY
+  read -rp "  Deepgram API key: " _KEY
   [[ -n "$_KEY" ]] && DEEPGRAM_API_KEY="$_KEY"
 else
   echo "  Deepgram: ✓ (from env)"
@@ -88,28 +89,144 @@ fi
 
 if [[ -z "${OPENAI_API_KEY:-}" && -z "${ELEVENLABS_API_KEY:-}" && -z "${DEEPGRAM_API_KEY:-}" ]]; then
   echo ""
-  echo "ℹ️  No provider keys set — server-side STT/TTS won't be available."
-  echo "   Users can still use on-device STT/TTS from the iOS app."
+  echo "  ℹ️  No provider keys — server-side STT/TTS won't be available."
+  echo "     The app can still use on-device STT/TTS."
 fi
 
 # ── Auth token ──
 
 if [[ -z "${RELAY_AUTH_TOKEN:-}" ]]; then
   RELAY_AUTH_TOKEN="$(openssl rand -base64 32 | tr -d '/+=' | head -c 44)"
-  echo "Generated RELAY_AUTH_TOKEN: $RELAY_AUTH_TOKEN"
 fi
 
-# ── Python venv in skill directory ──
+# ── Python venv ──
 
-echo "Setting up Python venv..."
+echo ""
+echo "Setting up Python environment..."
 python3 -m venv "$SKILL_DIR/venv"
 "$SKILL_DIR/venv/bin/pip" install -q fastapi uvicorn aiohttp websockets
+echo "  ✓ Python dependencies installed"
+
+# ── Connection mode ──
+
+echo ""
+
+# If domain provided via flag, use it
+if [[ -z "$DOMAIN" ]]; then
+  echo "─────────────────────────────────────────────"
+  echo "How should the app connect to this server?"
+  echo ""
+  echo "  1) Domain — you have a domain pointing to this server (e.g. clack.example.com)"
+  echo "  2) Tailscale — encrypted P2P, no domain needed (free)"
+  echo ""
+  read -rp "Choose [1/2]: " _CONN_CHOICE
+
+  if [[ "$_CONN_CHOICE" == "1" ]]; then
+    read -rp "Domain name: " DOMAIN
+    if [[ -z "$DOMAIN" ]]; then
+      echo "No domain entered, falling back to Tailscale."
+      _CONN_CHOICE="2"
+    fi
+  fi
+
+  if [[ "$_CONN_CHOICE" == "2" ]]; then
+    # Install Tailscale if not present
+    if ! command -v tailscale &>/dev/null; then
+      echo ""
+      echo "Installing Tailscale..."
+      curl -fsSL https://tailscale.com/install.sh | sh
+    fi
+    if ! tailscale status &>/dev/null 2>&1; then
+      echo ""
+      echo "Starting Tailscale — follow the auth link below:"
+      tailscale up
+    fi
+    TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
+    if [[ -z "$TAILSCALE_IP" ]]; then
+      echo "ERROR: Could not get Tailscale IP. Run 'tailscale up' and try again."
+      exit 1
+    fi
+    echo "  ✓ Tailscale IP: $TAILSCALE_IP"
+  fi
+fi
+
+# ── Domain SSL setup ──
+
+if [[ -n "$DOMAIN" ]]; then
+  SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || echo "")
+  DOMAIN_IP=$(dig +short "$DOMAIN" 2>/dev/null | tail -1)
+
+  if [[ -n "$SERVER_IP" && "$DOMAIN_IP" != "$SERVER_IP" ]]; then
+    echo ""
+    echo "⚠️  $DOMAIN resolves to $DOMAIN_IP, but this server is $SERVER_IP"
+    echo "   Make sure your DNS A record points $DOMAIN → $SERVER_IP"
+    read -rp "Continue anyway? (y/N): " _CONT
+    [[ "$_CONT" != "y" && "$_CONT" != "Y" ]] && { echo "Aborted."; exit 1; }
+  fi
+
+  echo "Setting up SSL for $DOMAIN..."
+
+  # Install Caddy if no reverse proxy available
+  if ! command -v caddy &>/dev/null && ! command -v nginx &>/dev/null; then
+    echo "Installing Caddy (for automatic SSL)..."
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https > /dev/null 2>&1
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+    apt-get update -qq
+    apt-get install -y -qq caddy > /dev/null 2>&1
+    echo "  ✓ Caddy installed"
+  fi
+
+  if command -v caddy &>/dev/null; then
+    CADDY_CONF="/etc/caddy/Caddyfile"
+    if ! grep -q "$DOMAIN" "$CADDY_CONF" 2>/dev/null; then
+      cat >> "$CADDY_CONF" <<CADEOF
+
+$DOMAIN {
+    reverse_proxy localhost:$PORT
+}
+CADEOF
+      systemctl reload caddy 2>/dev/null || caddy reload --config "$CADDY_CONF" 2>/dev/null
+    fi
+    echo "  ✓ Caddy configured — SSL will be provisioned automatically"
+
+  elif command -v nginx &>/dev/null; then
+    if ! command -v certbot &>/dev/null; then
+      apt-get install -y -qq certbot python3-certbot-nginx > /dev/null 2>&1
+    fi
+    NGINX_CONF="/etc/nginx/sites-available/clack"
+    cat > "$NGINX_CONF" <<NGEOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+NGEOF
+    ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/clack
+    nginx -t && systemctl reload nginx
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email 2>&1 || {
+      echo "⚠️  Certbot failed — run manually: certbot --nginx -d $DOMAIN"
+    }
+    echo "  ✓ nginx + SSL configured"
+  fi
+fi
 
 # ── systemd service ──
 
 SERVICE_FILE="/etc/systemd/system/clack.service"
 
-# Build environment lines
 ENV_LINES="Environment=OPENCLAW_GATEWAY_URL=$OPENCLAW_GATEWAY_URL
 Environment=OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_GATEWAY_TOKEN
 Environment=RELAY_AUTH_TOKEN=$RELAY_AUTH_TOKEN
@@ -144,159 +261,35 @@ systemctl daemon-reload
 systemctl enable clack
 systemctl restart clack
 
-# ── Optional: SSL with domain ──
-
-if [[ -z "$DOMAIN" ]]; then
-  echo ""
-  echo "─────────────────────────────────────────────"
-  echo "Do you have a domain name pointing to this server?"
-  echo "A domain enables secure WSS connections (recommended)."
-  echo ""
-  echo "  Example: clack.yourdomain.com"
-  echo ""
-  read -rp "Domain (leave empty to skip): " DOMAIN
-fi
-
-SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || echo "<your-server-ip>")
-
-if [[ -n "$DOMAIN" ]]; then
-  echo ""
-  echo "Setting up SSL for $DOMAIN..."
-
-  # Check if domain resolves to this server
-  DOMAIN_IP=$(dig +short "$DOMAIN" 2>/dev/null | tail -1)
-  if [[ "$DOMAIN_IP" != "$SERVER_IP" ]]; then
-    echo ""
-    echo "⚠️  WARNING: $DOMAIN resolves to $DOMAIN_IP, but this server is $SERVER_IP"
-    echo "   Make sure your DNS A record points $DOMAIN → $SERVER_IP"
-    echo "   SSL setup will likely fail until DNS is correct."
-    read -rp "Continue anyway? (y/N): " _CONT
-    [[ "$_CONT" != "y" && "$_CONT" != "Y" ]] && DOMAIN=""
-  fi
-fi
-
-if [[ -n "$DOMAIN" ]]; then
-  # Detect reverse proxy
-  if command -v caddy &>/dev/null; then
-    PROXY="caddy"
-  elif command -v nginx &>/dev/null; then
-    PROXY="nginx"
-  else
-    PROXY=""
-  fi
-
-  if [[ "$PROXY" == "caddy" ]]; then
-    echo "Detected Caddy — adding reverse proxy config..."
-    CADDY_CONF="/etc/caddy/Caddyfile"
-    if ! grep -q "$DOMAIN" "$CADDY_CONF" 2>/dev/null; then
-      cat >> "$CADDY_CONF" <<CADEOF
-
-$DOMAIN {
-    reverse_proxy localhost:$PORT
-}
-CADEOF
-      systemctl reload caddy 2>/dev/null || caddy reload --config "$CADDY_CONF" 2>/dev/null
-      echo "✅ Caddy configured — SSL will be provisioned automatically"
-    else
-      echo "Domain already in Caddy config"
-    fi
-    CONNECT_URL="wss://$DOMAIN/voice"
-
-  elif [[ "$PROXY" == "nginx" ]]; then
-    echo "Detected nginx — creating config..."
-    if ! command -v certbot &>/dev/null; then
-      echo "Installing certbot..."
-      apt-get install -y -qq certbot python3-certbot-nginx
-    fi
-    NGINX_CONF="/etc/nginx/sites-available/clack"
-    cat > "$NGINX_CONF" <<NGEOF
-server {
-    listen 80;
-    server_name $DOMAIN;
-
-    location / {
-        proxy_pass http://127.0.0.1:$PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-    }
-}
-NGEOF
-    ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/clack
-    nginx -t && systemctl reload nginx
-    echo "Running certbot for SSL..."
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email 2>&1 || {
-      echo "⚠️  Certbot failed — you may need to run manually: certbot --nginx -d $DOMAIN"
-    }
-    CONNECT_URL="wss://$DOMAIN/voice"
-
-  else
-    echo ""
-    echo "No supported reverse proxy detected (Caddy or nginx)."
-    echo ""
-    echo "Quick option — install Caddy:"
-    echo "  apt install caddy"
-    echo "  Re-run: bash scripts/setup.sh --domain $DOMAIN"
-    echo ""
-    CONNECT_URL="wss://$DOMAIN/voice"
-  fi
-else
-  # No domain — detect Tailscale
-  TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
-  CONNECT_URL=""
-fi
-
 # ── Done ──
 
 echo ""
 echo "════════════════════════════════════════════════"
-echo "  Clack Voice Relay — Setup Complete"
+echo "  ✅ Clack Voice Relay — Setup Complete"
 echo "════════════════════════════════════════════════"
 echo ""
 echo "  Service:  systemctl status clack"
 echo "  Logs:     journalctl -u clack -f"
 echo ""
-echo "  Auth Token: $RELAY_AUTH_TOKEN"
-echo ""
 
-if [[ -n "$CONNECT_URL" ]]; then
-  # Domain mode — WSS
+if [[ -n "$DOMAIN" ]]; then
   echo "  ┌─────────────────────────────────────────┐"
-  echo "  │ Domain mode (WSS):                      │"
-  echo "  │ Server: $DOMAIN"
-  echo "  │ Connection: Domain (SSL)                │"
+  echo "  │  App Settings → Server                  │"
+  echo "  │                                         │"
+  echo "  │  Server:     $DOMAIN"
+  echo "  │  Connection: Domain (SSL)               │"
+  echo "  │  Token:      $RELAY_AUTH_TOKEN"
   echo "  └─────────────────────────────────────────┘"
 elif [[ -n "${TAILSCALE_IP:-}" ]]; then
-  # Tailscale available
   echo "  ┌─────────────────────────────────────────┐"
-  echo "  │ Tailscale mode:                         │"
-  echo "  │ Server: $TAILSCALE_IP"
-  echo "  │ Port: $PORT"
-  echo "  │ Connection: Tailscale                   │"
+  echo "  │  App Settings → Server                  │"
+  echo "  │                                         │"
+  echo "  │  Server:     $TAILSCALE_IP"
+  echo "  │  Port:       $PORT"
+  echo "  │  Connection: Tailscale                  │"
+  echo "  │  Token:      $RELAY_AUTH_TOKEN"
   echo "  └─────────────────────────────────────────┘"
   echo ""
-  echo "  For domain mode (WSS), re-run with:"
-  echo "    bash scripts/setup.sh --domain clack.yourdomain.com"
-else
-  # Neither domain nor Tailscale
-  echo "  ⚠️  No encrypted connection method available!"
-  echo ""
-  echo "  Clack requires encrypted connections. Choose one:"
-  echo ""
-  echo "  1. Domain (WSS) — re-run with a domain pointing to this server:"
-  echo "     bash scripts/setup.sh --domain clack.yourdomain.com"
-  echo ""
-  echo "  2. Tailscale — install Tailscale for encrypted P2P connections:"
-  echo "     curl -fsSL https://tailscale.com/install.sh | sh"
-  echo "     tailscale up"
-  echo "     Then use your Tailscale IP in the app (port $PORT)."
+  echo "  Make sure Tailscale is also installed on your iPhone."
 fi
-echo ""
-echo "  Enter the connection details and token in the Clack iOS app."
 echo ""
