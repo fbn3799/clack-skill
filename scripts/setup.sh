@@ -59,6 +59,34 @@ if [[ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]]; then
   exit 1
 fi
 
+# ── Enable chat completions endpoint ──
+if [[ -f "$OPENCLAW_CONFIG" ]] && command -v python3 &>/dev/null; then
+  _CC_ENABLED=$(python3 -c "
+import json
+c=json.load(open('$OPENCLAW_CONFIG'))
+print(c.get('gateway',{}).get('http',{}).get('endpoints',{}).get('chatCompletions',{}).get('enabled',False))
+" 2>/dev/null)
+  if [[ "$_CC_ENABLED" != "True" ]]; then
+    echo "  Enabling /v1/chat/completions endpoint..."
+    python3 -c "
+import json
+p='$OPENCLAW_CONFIG'
+c=json.load(open(p))
+c.setdefault('gateway',{}).setdefault('http',{}).setdefault('endpoints',{}).setdefault('chatCompletions',{})['enabled']=True
+json.dump(c,open(p,'w'),indent=2)
+print('  ✓ Chat completions enabled in', p)
+"
+    # Restart gateway to apply
+    if command -v openclaw &>/dev/null; then
+      openclaw gateway restart &>/dev/null && echo "  ✓ Gateway restarted" || echo "  ⚠ Could not restart gateway — restart manually: openclaw gateway restart"
+    else
+      echo "  ⚠ Restart your OpenClaw gateway to apply: openclaw gateway restart"
+    fi
+  else
+    echo "  ✓ Chat completions endpoint already enabled"
+  fi
+fi
+
 # ── API keys ──
 
 echo ""
