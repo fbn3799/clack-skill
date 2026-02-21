@@ -280,23 +280,39 @@ echo "  Logs:     journalctl -u clack -f"
 echo ""
 
 if [[ -n "$DOMAIN" ]]; then
+  echo "  In the Clack app → Settings → Server:"
+  echo ""
   echo "  ┌─────────────────────────────────────────┐"
-  echo "  │  App Settings → Server                  │"
-  echo "  │                                         │"
   echo "  │  Server:     $DOMAIN"
   echo "  │  Connection: Domain (SSL)               │"
-  echo "  │  Token:      $RELAY_AUTH_TOKEN"
   echo "  └─────────────────────────────────────────┘"
+  echo ""
+  echo "  Then tap Pair and enter the pairing code."
+  echo "  Generate a code anytime with:"
+  echo "    sudo bash scripts/pair.sh"
+  echo ""
+  # Auto-generate first pairing code
+  sleep 2  # wait for service to start
+  echo "  Generating first pairing code..."
+  PAIR_RESPONSE=$(curl -s "http://localhost:${PORT}/pair?token=${RELAY_AUTH_TOKEN}" 2>/dev/null || true)
+  PAIR_CODE=$(echo "$PAIR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['code'])" 2>/dev/null || true)
+  if [[ -n "$PAIR_CODE" ]]; then
+    echo ""
+    echo "  ┌─────────────────────────────────────────┐"
+    echo "  │  Pairing Code:  $PAIR_CODE (expires in 5 min)  │"
+    echo "  └─────────────────────────────────────────┘"
+  fi
+
 elif [[ -n "${TAILSCALE_IP:-}" ]]; then
+  echo "  In the Clack app → Settings → Server:"
+  echo ""
   echo "  ┌─────────────────────────────────────────┐"
-  echo "  │  App Settings → Server                  │"
-  echo "  │                                         │"
   echo "  │  Server:     $TAILSCALE_IP"
   echo "  │  Port:       $PORT"
   echo "  │  Connection: Tailscale                  │"
-  echo "  │  Token:      $RELAY_AUTH_TOKEN"
   echo "  └─────────────────────────────────────────┘"
   echo ""
+  echo "  No pairing needed — Tailscale handles authentication."
   echo "  Make sure Tailscale is also installed on your iPhone."
 fi
 echo ""
