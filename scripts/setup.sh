@@ -24,7 +24,13 @@ echo "Port: $PORT"
 
 # ── OpenClaw config ──
 
-OPENCLAW_CONFIG="${HOME}/.openclaw/openclaw.json"
+# Find OpenClaw config — check SUDO_USER's home first, then current HOME
+if [[ -n "${SUDO_USER:-}" ]]; then
+  _REAL_HOME=$(eval echo "~$SUDO_USER")
+else
+  _REAL_HOME="$HOME"
+fi
+OPENCLAW_CONFIG="${_REAL_HOME}/.openclaw/openclaw.json"
 if [[ -f "$OPENCLAW_CONFIG" ]]; then
   echo "Found OpenClaw config: $OPENCLAW_CONFIG"
   if command -v python3 &>/dev/null; then
