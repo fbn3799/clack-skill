@@ -23,12 +23,6 @@ Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that sets up 
 ### 1. Install the skill
 
 ```bash
-openclaw skill install github:fbn3799/clack-skill
-```
-
-Or manually:
-
-```bash
 git clone https://github.com/fbn3799/clack-skill.git ~/.openclaw/workspace/skills/clack
 ```
 
