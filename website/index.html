@@ -557,6 +557,13 @@
         <span class="badge">🎙️ Multi-Provider</span>
         <span class="badge">💰 Free On-Device Option</span>
     </div>
+    <div style="margin-top: 32px; max-width: 580px; position: relative; z-index: 1;">
+        <p style="color: var(--text-dim); font-size: 14px; margin-bottom: 8px;">Have <a href="https://openclaw.ai" style="color: var(--accent-light); text-decoration: none;">OpenClaw</a>? Just tell your agent:</p>
+        <div style="position: relative;">
+            <code id="hero-prompt" style="display: block; padding: 14px 44px 14px 16px; background: rgba(26, 26, 46, 0.8); border: 1px solid #2a2a3e; border-radius: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 13px; color: var(--accent-light); cursor: pointer; text-align: left;" onclick="copyHeroPrompt()">Install the Clack voice relay skill from https://github.com/fbn3799/clack-skill and set it up</code>
+            <button onclick="copyHeroPrompt()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 6px; font-size: 14px;" title="Copy" id="hero-copy-btn">📋</button>
+        </div>
+    </div>
 </div>
 
 <!-- Voice Configuration -->
@@ -757,14 +764,16 @@
 </section>
 
 <script>
-function copyPrompt() {
-    const text = document.getElementById('prompt-text').textContent;
+function copyText(textId, btnId) {
+    const text = document.getElementById(textId).textContent;
     navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('copy-btn');
+        const btn = document.getElementById(btnId);
         btn.textContent = '✅';
         setTimeout(() => { btn.textContent = '📋'; }, 2000);
     });
 }
+function copyPrompt() { copyText('prompt-text', 'copy-btn'); }
+function copyHeroPrompt() { copyText('hero-prompt', 'hero-copy-btn'); }
 </script>
 
 <!-- CTA -->
