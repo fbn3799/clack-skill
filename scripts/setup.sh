@@ -138,8 +138,15 @@ if [[ -z "$DOMAIN" ]]; then
     fi
     if ! tailscale status &>/dev/null 2>&1; then
       echo ""
-      echo "Starting Tailscale — follow the auth link below:"
+      echo "─────────────────────────────────────────────"
+      echo "  Tailscale needs to join your network."
+      echo "  A login link will appear below — open it"
+      echo "  in your browser to authenticate."
+      echo "─────────────────────────────────────────────"
+      echo ""
       tailscale up
+      echo ""
+      echo "  ✓ Tailscale connected"
     fi
     TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
     if [[ -z "$TAILSCALE_IP" ]]; then
