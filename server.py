@@ -36,7 +36,7 @@ from typing import Optional, AsyncIterator
 from difflib import SequenceMatcher
 
 import aiohttp
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -523,7 +523,21 @@ def save_history(history: list):
         print(f"[History] Error saving: {e}")
 
 
-def verify_token(token: str) -> bool:
+import ipaddress
+
+TAILSCALE_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
+def is_tailscale_ip(ip: str) -> bool:
+    """Check if an IP is in the Tailscale CGNAT range (100.64.0.0/10)."""
+    try:
+        return ipaddress.ip_address(ip) in TAILSCALE_NETWORK
+    except ValueError:
+        return False
+
+def verify_token(token: str, client_ip: str = "") -> bool:
+    """Verify auth token. Tailscale IPs bypass token requirement."""
+    if is_tailscale_ip(client_ip):
+        return True
     if not RELAY_AUTH_TOKEN:
         return True
     return hmac.compare_digest(token, RELAY_AUTH_TOKEN)
@@ -812,8 +826,8 @@ DEEPGRAM_VOICES = [
 ]
 
 @app.get("/voices")
-async def list_voices(token: str = Query(default=""), provider: str = Query(default="")):
-    if not verify_token(token):
+async def list_voices(request: Request, token: str = Query(default=""), provider: str = Query(default="")):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     default = os.getenv("TTS_VOICE", "bIHbv24MWmeRgasZH58o")
 
@@ -827,8 +841,8 @@ async def list_voices(token: str = Query(default=""), provider: str = Query(defa
 
 
 @app.get("/info")
-async def info(token: str = Query(default="")):
-    if not verify_token(token):
+async def info(request: Request, token: str = Query(default="")):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     return {
         "agentName": os.getenv("CLACK_AGENT_NAME", "Storm"),
@@ -844,9 +858,9 @@ async def info(token: str = Query(default="")):
 
 
 @app.get("/pair")
-async def create_pairing(token: str = Query(default="")):
+async def create_pairing(request: Request, token: str = Query(default="")):
     """Generate a one-time pairing code. Requires admin auth (relay token)."""
-    if not verify_token(token):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     code = _generate_pairing_code()
     print(f"[Pair] Generated code: {code} (expires in {PAIRING_TTL}s)")
@@ -867,15 +881,15 @@ async def redeem_pairing(code: str = Query(default="")):
 
 
 @app.get("/history")
-async def get_history(token: str = Query(default="")):
-    if not verify_token(token):
+async def get_history(request: Request, token: str = Query(default="")):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     history = load_history()
     return {"messages": history, "count": len(history)}
 
 @app.delete("/history")
-async def clear_history(token: str = Query(default="")):
-    if not verify_token(token):
+async def clear_history(request: Request, token: str = Query(default="")):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     path = _history_path()
     if path.exists():
@@ -884,17 +898,17 @@ async def clear_history(token: str = Query(default="")):
 
 
 @app.get("/context")
-async def get_context(token: str = Query(default="")):
+async def get_context(request: Request, token: str = Query(default="")):
     """Get the current user context."""
-    if not verify_token(token):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     return load_context() or {"text": ""}
 
 
 @app.put("/context")
-async def set_context_put(token: str = Query(default=""), text: str = Query(default="")):
+async def set_context_put(request: Request, token: str = Query(default=""), text: str = Query(default="")):
     """Set user context via query param."""
-    if not verify_token(token):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     if not text:
         return {"error": "text required"}, 400
@@ -903,12 +917,11 @@ async def set_context_put(token: str = Query(default=""), text: str = Query(defa
     return {"ok": True, "context": ctx}
 
 
-from fastapi import Request
 
 @app.post("/context")
 async def set_context_post(request: Request, token: str = Query(default="")):
     """Set user context via JSON body: {"text": "..."}"""
-    if not verify_token(token):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     try:
         body = await request.json()
@@ -925,7 +938,7 @@ async def set_context_post(request: Request, token: str = Query(default="")):
 @app.delete("/context")
 async def clear_context(token: str = Query(default="")):
     """Clear user context."""
-    if not verify_token(token):
+    if not verify_token(token, request.client.host):
         return {"error": "unauthorized"}, 401
     if CONTEXT_FILE.exists():
         CONTEXT_FILE.unlink()
@@ -938,7 +951,8 @@ async def clear_context(token: str = Query(default="")):
 async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
     await websocket.accept()
     print(f"[WS] Client connected: {websocket.client}")
-    authenticated = verify_token(token) if token else not RELAY_AUTH_TOKEN
+    client_ip = websocket.client.host if websocket.client else ""
+    authenticated = verify_token(token, client_ip) if token else (is_tailscale_ip(client_ip) or not RELAY_AUTH_TOKEN)
     session = None
     try:
         while True:
@@ -947,7 +961,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                 data = json.loads(message["text"])
                 msg_type = data.get("type")
                 if msg_type == "auth" and not authenticated:
-                    if verify_token(data.get("token", "")):
+                    if verify_token(data.get("token", ""), client_ip):
                         authenticated = True
                         await websocket.send_text(json.dumps({"type": "auth_ok"}))
                     else:
