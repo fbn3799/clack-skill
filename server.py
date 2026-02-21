@@ -616,21 +616,16 @@ class VoiceSession:
 
         # TTS provider selection
         tts_choice = config.get("ttsProvider", "").lower() if config.get("ttsProvider") else ""
+        voice = config.get("voice", "")
         if tts_choice == "local":
             self.tts = None
             self.local_tts = True
         elif tts_choice and tts_choice in available_tts:
-            voice = config.get("voice", "")
-            if tts_choice == "elevenlabs" and voice:
-                el_key = os.getenv("ELEVENLABS_API_KEY", "")
-                self.tts = ElevenLabsTTS(el_key, VOICE_ALIASES.get(voice, voice))
-            else:
-                self.tts = available_tts[tts_choice]
+            self.tts = self._create_tts_with_voice(tts_choice, voice, available_tts[tts_choice])
             self.local_tts = False
         else:
-            voice = config.get("voice", "")
-            if voice and tts_provider and isinstance(tts_provider, ElevenLabsTTS):
-                self.tts = ElevenLabsTTS(tts_provider.api_key, VOICE_ALIASES.get(voice, voice))
+            if voice and tts_provider:
+                self.tts = self._create_tts_with_voice(TTS_NAME.lower(), voice, tts_provider)
             else:
                 self.tts = tts_provider
             self.local_tts = config.get("localTTS", False)
@@ -638,6 +633,28 @@ class VoiceSession:
         # Apply context from start config if provided
         if config.get("context"):
             self.update_context(config["context"])
+
+    @staticmethod
+    def _create_tts_with_voice(provider_name: str, voice: str, fallback_provider):
+        """Create a TTS provider instance with the requested voice."""
+        if not voice:
+            return fallback_provider
+        if provider_name == "elevenlabs":
+            el_key = os.getenv("ELEVENLABS_API_KEY", "")
+            resolved = VOICE_ALIASES.get(voice.lower(), voice)
+            return ElevenLabsTTS(el_key, resolved)
+        elif provider_name == "openai":
+            # OpenAI voices: alloy, ash, coral, echo, fable, onyx, nova, sage, shimmer
+            oai_key = os.getenv("OPENAI_API_KEY", "")
+            return OpenAITTS(oai_key, voice.lower())
+        elif provider_name == "deepgram":
+            # Deepgram voices: allow short name (e.g. "asteria") or full ID
+            dg_key = os.getenv("DEEPGRAM_API_KEY", "")
+            # Map short names to full IDs
+            dg_aliases = {v["name"].lower(): v["id"] for v in DEEPGRAM_VOICES}
+            resolved = dg_aliases.get(voice.lower(), voice)
+            return DeepgramTTS(dg_key, resolved)
+        return fallback_provider
 
     def _build_system_prompt(self, config: dict) -> str:
         """Build system prompt with optional user context injected."""
@@ -767,12 +784,46 @@ async def root():
 async def health():
     return {"status": "ok", "backend": "openclaw", "stt": STT_NAME, "tts": TTS_NAME}
 
+OPENAI_VOICES = [
+    {"id": "alloy", "name": "Alloy", "gender": "neutral", "style": "balanced, versatile"},
+    {"id": "ash", "name": "Ash", "gender": "male", "style": "clear, direct"},
+    {"id": "coral", "name": "Coral", "gender": "female", "style": "warm, engaging"},
+    {"id": "echo", "name": "Echo", "gender": "male", "style": "smooth, narrative"},
+    {"id": "fable", "name": "Fable", "gender": "male", "style": "expressive, British"},
+    {"id": "onyx", "name": "Onyx", "gender": "male", "style": "deep, authoritative"},
+    {"id": "nova", "name": "Nova", "gender": "female", "style": "warm, friendly"},
+    {"id": "sage", "name": "Sage", "gender": "female", "style": "calm, thoughtful"},
+    {"id": "shimmer", "name": "Shimmer", "gender": "female", "style": "bright, optimistic"},
+]
+
+DEEPGRAM_VOICES = [
+    {"id": "aura-asteria-en", "name": "Asteria", "gender": "female", "accent": "American", "style": "warm, professional"},
+    {"id": "aura-luna-en", "name": "Luna", "gender": "female", "accent": "American", "style": "soft, soothing"},
+    {"id": "aura-stella-en", "name": "Stella", "gender": "female", "accent": "American", "style": "clear, confident"},
+    {"id": "aura-athena-en", "name": "Athena", "gender": "female", "accent": "British", "style": "elegant, articulate"},
+    {"id": "aura-hera-en", "name": "Hera", "gender": "female", "accent": "American", "style": "warm, narrative"},
+    {"id": "aura-orion-en", "name": "Orion", "gender": "male", "accent": "American", "style": "deep, clear"},
+    {"id": "aura-arcas-en", "name": "Arcas", "gender": "male", "accent": "American", "style": "confident, engaging"},
+    {"id": "aura-perseus-en", "name": "Perseus", "gender": "male", "accent": "American", "style": "strong, narrative"},
+    {"id": "aura-angus-en", "name": "Angus", "gender": "male", "accent": "Irish", "style": "warm, friendly"},
+    {"id": "aura-orpheus-en", "name": "Orpheus", "gender": "male", "accent": "American", "style": "smooth, rich"},
+    {"id": "aura-helios-en", "name": "Helios", "gender": "male", "accent": "British", "style": "refined, clear"},
+    {"id": "aura-zeus-en", "name": "Zeus", "gender": "male", "accent": "American", "style": "authoritative, deep"},
+]
+
 @app.get("/voices")
-async def list_voices(token: str = Query(default="")):
+async def list_voices(token: str = Query(default=""), provider: str = Query(default="")):
     if not verify_token(token):
         return {"error": "unauthorized"}, 401
     default = os.getenv("TTS_VOICE", "bIHbv24MWmeRgasZH58o")
-    return {"voices": VOICE_METADATA, "default": default}
+
+    if provider == "openai":
+        return {"voices": OPENAI_VOICES, "default": "alloy", "provider": "openai"}
+    elif provider == "deepgram":
+        return {"voices": DEEPGRAM_VOICES, "default": "aura-asteria-en", "provider": "deepgram"}
+    else:
+        # Default: ElevenLabs
+        return {"voices": VOICE_METADATA, "default": default, "provider": "elevenlabs"}
 
 
 @app.get("/info")
