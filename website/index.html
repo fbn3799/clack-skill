@@ -708,6 +708,17 @@
     <h2>Up and running in 5 minutes</h2>
     <p>Self-hosted means you own the infrastructure. Here's how to set it up.</p>
 
+    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; margin-bottom: 40px;">
+        <p style="color: var(--text-dim); font-size: 15px; margin-bottom: 12px;">Already have OpenClaw? Just tell your agent:</p>
+        <div style="position: relative;">
+            <code id="prompt-text" style="display: block; padding: 16px 48px 16px 16px; background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 14px; color: var(--accent-light); word-break: break-word; cursor: pointer;" onclick="copyPrompt()">Install the Clack voice relay skill from https://github.com/fbn3799/clack-skill and set it up</code>
+            <button onclick="copyPrompt()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 8px; font-size: 16px;" title="Copy to clipboard" id="copy-btn">📋</button>
+        </div>
+        <p style="color: var(--text-dim); font-size: 13px; margin-top: 10px; margin-bottom: 0;">Your agent handles cloning, dependencies, and service setup automatically.</p>
+    </div>
+
+    <p style="color: var(--text-dim); font-size: 15px; margin-bottom: 24px;">Or set it up manually:</p>
+
     <div class="steps">
         <div class="step">
             <div>
@@ -744,6 +755,17 @@
         </div>
     </div>
 </section>
+
+<script>
+function copyPrompt() {
+    const text = document.getElementById('prompt-text').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = '✅';
+        setTimeout(() => { btn.textContent = '📋'; }, 2000);
+    });
+}
+</script>
 
 <!-- CTA -->
 <section class="cta">
