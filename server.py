@@ -1119,6 +1119,11 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                     session.audio_buffer.extend(message["bytes"])
     except WebSocketDisconnect:
         print(f"[WS] Client disconnected")
+    except RuntimeError as e:
+        if "disconnect" in str(e).lower():
+            print(f"[WS] Client disconnected (runtime)")
+        else:
+            print(f"[WS] Runtime error: {e}")
     except Exception as e:
         print(f"[WS] Error: {e}")
     finally:
