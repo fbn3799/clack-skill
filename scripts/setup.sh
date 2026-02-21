@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # Clack Voice Relay — automated setup
-# Usage: bash setup.sh [--port 9878] [--install-dir /opt/clack] [--domain clack.example.com]
+# Usage: bash scripts/setup.sh [--port 9878] [--domain clack.example.com]
 set -euo pipefail
 
 PORT="${VOICE_RELAY_PORT:-9878}"
-INSTALL_DIR="/opt/clack"
 DOMAIN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --port) PORT="$2"; shift 2;;
-    --install-dir) INSTALL_DIR="$2"; shift 2;;
     --domain) DOMAIN="$2"; shift 2;;
     *) echo "Unknown arg: $1"; exit 1;;
   esac
 done
 
+# Resolve skill directory (parent of scripts/)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "=== Clack Voice Relay Setup ==="
-echo "Install dir: $INSTALL_DIR"
+echo "Skill dir: $SKILL_DIR"
 echo "Port: $PORT"
 
 # ── OpenClaw config ──
@@ -47,10 +47,46 @@ if [[ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]]; then
   exit 1
 fi
 
-# ── ElevenLabs key ──
+# ── API keys (at least one TTS provider needed) ──
 
-if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
-  read -rp "ElevenLabs API key: " ELEVENLABS_API_KEY
+HAS_PROVIDER=false
+if [[ -n "${ELEVENLABS_API_KEY:-}" ]]; then
+  HAS_PROVIDER=true
+  echo "  ElevenLabs: ✓ (from env)"
+fi
+if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  HAS_PROVIDER=true
+  echo "  OpenAI: ✓ (from env)"
+fi
+if [[ -n "${DEEPGRAM_API_KEY:-}" ]]; then
+  HAS_PROVIDER=true
+  echo "  Deepgram: ✓ (from env)"
+fi
+
+if [[ "$HAS_PROVIDER" == "false" ]]; then
+  echo ""
+  echo "No TTS provider API key found in environment."
+  echo "You need at least one of: ELEVENLABS_API_KEY, OPENAI_API_KEY, DEEPGRAM_API_KEY"
+  echo ""
+  read -rp "ElevenLabs API key (or press Enter to skip): " _EL_KEY
+  if [[ -n "$_EL_KEY" ]]; then
+    ELEVENLABS_API_KEY="$_EL_KEY"
+  else
+    read -rp "OpenAI API key (required for STT, also provides TTS): " OPENAI_API_KEY
+    if [[ -z "$OPENAI_API_KEY" ]]; then
+      echo "ERROR: At least one API key is required"
+      exit 1
+    fi
+  fi
+fi
+
+# OpenAI is needed for STT (Whisper) unless using local STT
+if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+  echo ""
+  echo "Note: OpenAI API key not set. Server-side STT (Whisper) won't be available."
+  echo "Users can still use on-device STT from the app."
+  read -rp "OpenAI API key (Enter to skip): " _OAI_KEY
+  [[ -n "$_OAI_KEY" ]] && OPENAI_API_KEY="$_OAI_KEY"
 fi
 
 # ── Auth token ──
@@ -60,18 +96,30 @@ if [[ -z "${RELAY_AUTH_TOKEN:-}" ]]; then
   echo "Generated RELAY_AUTH_TOKEN: $RELAY_AUTH_TOKEN"
 fi
 
-# ── Install server ──
-
-mkdir -p "$INSTALL_DIR"
-cp "$SCRIPT_DIR/server.py" "$INSTALL_DIR/server.py"
+# ── Python venv in skill directory ──
 
 echo "Setting up Python venv..."
-python3 -m venv "$INSTALL_DIR/venv"
-"$INSTALL_DIR/venv/bin/pip" install -q fastapi uvicorn aiohttp websockets
+python3 -m venv "$SKILL_DIR/venv"
+"$SKILL_DIR/venv/bin/pip" install -q fastapi uvicorn aiohttp websockets
 
 # ── systemd service ──
 
 SERVICE_FILE="/etc/systemd/system/clack.service"
+
+# Build environment lines
+ENV_LINES="Environment=OPENCLAW_GATEWAY_URL=$OPENCLAW_GATEWAY_URL
+Environment=OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_GATEWAY_TOKEN
+Environment=RELAY_AUTH_TOKEN=$RELAY_AUTH_TOKEN
+Environment=VOICE_RELAY_PORT=$PORT
+Environment=PYTHONUNBUFFERED=1"
+
+[[ -n "${ELEVENLABS_API_KEY:-}" ]] && ENV_LINES="$ENV_LINES
+Environment=ELEVENLABS_API_KEY=$ELEVENLABS_API_KEY"
+[[ -n "${OPENAI_API_KEY:-}" ]] && ENV_LINES="$ENV_LINES
+Environment=OPENAI_API_KEY=$OPENAI_API_KEY"
+[[ -n "${DEEPGRAM_API_KEY:-}" ]] && ENV_LINES="$ENV_LINES
+Environment=DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY"
+
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Clack Voice Relay (OpenClaw)
@@ -79,14 +127,9 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$INSTALL_DIR
-Environment=ELEVENLABS_API_KEY=$ELEVENLABS_API_KEY
-Environment=OPENCLAW_GATEWAY_URL=$OPENCLAW_GATEWAY_URL
-Environment=OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_GATEWAY_TOKEN
-Environment=RELAY_AUTH_TOKEN=$RELAY_AUTH_TOKEN
-Environment=VOICE_RELAY_PORT=$PORT
-Environment=PYTHONUNBUFFERED=1
-ExecStart=$INSTALL_DIR/venv/bin/python server.py
+WorkingDirectory=$SKILL_DIR
+$ENV_LINES
+ExecStart=$SKILL_DIR/venv/bin/python server.py
 Restart=always
 RestartSec=3
 
@@ -135,8 +178,6 @@ if [[ -n "$DOMAIN" ]]; then
     PROXY="caddy"
   elif command -v nginx &>/dev/null; then
     PROXY="nginx"
-  elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q nginx; then
-    PROXY="nginx-docker"
   else
     PROXY=""
   fi
@@ -160,7 +201,6 @@ CADEOF
 
   elif [[ "$PROXY" == "nginx" ]]; then
     echo "Detected nginx — creating config..."
-    # Install certbot if needed
     if ! command -v certbot &>/dev/null; then
       echo "Installing certbot..."
       apt-get install -y -qq certbot python3-certbot-nginx
@@ -196,23 +236,13 @@ NGEOF
   else
     echo ""
     echo "No supported reverse proxy detected (Caddy or nginx)."
-    echo "Install one and configure it to proxy $DOMAIN → localhost:$PORT"
     echo ""
     echo "Quick option — install Caddy:"
     echo "  apt install caddy"
-    echo "  echo '$DOMAIN { reverse_proxy localhost:$PORT }' > /etc/caddy/Caddyfile"
-    echo "  systemctl start caddy"
+    echo "  Re-run: bash scripts/setup.sh --domain $DOMAIN"
     echo ""
     CONNECT_URL="wss://$DOMAIN/voice"
   fi
-
-  # Save domain config for later reference
-  cat > "$INSTALL_DIR/ssl.conf" <<SSLEOF
-DOMAIN=$DOMAIN
-PROXY=$PROXY
-CONNECT_URL=$CONNECT_URL
-SSLEOF
-
 else
   CONNECT_URL="ws://$SERVER_IP:$PORT/voice"
 fi
@@ -236,11 +266,11 @@ echo "  │ $RELAY_AUTH_TOKEN"
 echo "  └─────────────────────────────────────────┘"
 echo ""
 if [[ "$CONNECT_URL" == ws://* ]]; then
-  echo "  ⚠️  Connection is UNENCRYPTED (ws://)"
-  echo "  To enable encryption, re-run with a domain:"
-  echo "    bash setup.sh --domain clack.yourdomain.com"
+  echo "  ⚠️  No domain configured — using unencrypted ws://"
+  echo "  For encryption, re-run with a domain:"
+  echo "    bash scripts/setup.sh --domain clack.yourdomain.com"
   echo ""
-  echo "  Or set up SSL later — see docs for details."
+  echo "  Or use Tailscale for encrypted connections without a domain."
 fi
 echo ""
 echo "  Enter the URL and token in the Clack iOS app to connect."

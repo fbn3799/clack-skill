@@ -37,13 +37,12 @@ The script auto-detects your OpenClaw gateway config. It will ask for your Eleve
 ### Options
 
 ```bash
-bash scripts/setup.sh [--port 9878] [--install-dir /opt/clack] [--domain clack.example.com]
+bash scripts/setup.sh [--port 9878] [--domain clack.example.com]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--port` | `9878` | Relay server port |
-| `--install-dir` | `/opt/clack` | Installation directory |
 | `--domain` | *(none)* | Domain for SSL setup (enables WSS) |
 
 ### Connection modes
