@@ -550,11 +550,15 @@ def is_tailscale_ip(ip: str) -> bool:
     except ValueError:
         return False
 
+CLACK_GUEST_TOKEN = os.getenv("CLACK_GUEST_TOKEN", "")
+
 def verify_token(token: str, client_ip: str = "") -> bool:
-    """Verify auth token. Tailscale IPs bypass token requirement."""
+    """Verify auth token. Tailscale IPs and guest tokens bypass pairing."""
     if is_tailscale_ip(client_ip):
         return True
     if not RELAY_AUTH_TOKEN:
+        return True
+    if CLACK_GUEST_TOKEN and hmac.compare_digest(token, CLACK_GUEST_TOKEN):
         return True
     return hmac.compare_digest(token, RELAY_AUTH_TOKEN)
 
@@ -891,6 +895,10 @@ async def redeem_pairing(code: str = Query(default="")):
     """Redeem a pairing code to get the auth token. No auth required."""
     if not code:
         return {"error": "code required"}, 400
+    # Guest token acts as a permanent pairing code
+    if CLACK_GUEST_TOKEN and hmac.compare_digest(code, CLACK_GUEST_TOKEN):
+        print(f"[Pair] Guest token accepted")
+        return {"token": RELAY_AUTH_TOKEN}
     if _redeem_pairing_code(code):
         print(f"[Pair] Code redeemed successfully")
         return {"token": RELAY_AUTH_TOKEN}
