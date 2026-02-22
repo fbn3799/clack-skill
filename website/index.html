@@ -724,46 +724,39 @@
         <div class="step">
             <div>
                 <h3>Install OpenClaw</h3>
-                <p>Set up OpenClaw on any server, VPS, or machine with a public IP.</p>
+                <p>Set up <a href="https://openclaw.ai" style="color: var(--accent-light);">OpenClaw</a> on any server, VPS, or machine you control.</p>
                 <code>npm i -g openclaw</code>
             </div>
         </div>
         <div class="step">
             <div>
-                <h3>Add the Clack Skill</h3>
-                <p>Clone the voice relay skill into your workspace and configure your speech provider API keys.</p>
-                <code>git clone https://github.com/fbn3799/clack-skill.git ~/.openclaw/workspace/skills/clack</code>
+                <h3>Install Clack</h3>
+                <p>One command clones the repo, installs dependencies, prompts for API keys, and configures the service.</p>
+                <code style="display: block; word-break: break-all;">curl -fsSL https://raw.githubusercontent.com/fbn3799/clack-skill/master/scripts/install.sh | sudo bash</code>
+                <p style="margin-top: 8px; font-size: 13px; color: var(--text-dim);">No API keys? No problem — on-device speech works without any.</p>
             </div>
         </div>
         <div class="step">
             <div>
-                <h3>Run the Setup Script</h3>
-                <p>The script creates a venv, installs dependencies, and configures a systemd service.</p>
-                <code>bash scripts/setup.sh --domain clack.yourdomain.com</code>
+                <h3>Choose Connection Mode</h3>
+                <p>The setup script asks you to choose:<br>
+                <strong>Domain (SSL):</strong> Point a DNS A record to your server — SSL is configured automatically via Caddy. Free domains via <a href="https://www.duckdns.org" style="color: var(--accent-light);">DuckDNS</a> work too.<br>
+                <strong>Tailscale:</strong> Install on server + phone, use the Tailscale IP. No domain or SSL setup needed.</p>
             </div>
         </div>
         <div class="step">
             <div>
-                <h3>Connect Securely</h3>
-                <p><strong>Domain:</strong> Point a DNS A record to your server — SSL is automatic. Free domains via <a href="https://www.duckdns.org" style="color: var(--accent-light);">DuckDNS</a> work too.<br>
-                <strong>Tailscale:</strong> Install on server + phone, use the Tailscale IP. No domain needed.</p>
-            </div>
-        </div>
-        <div class="step">
-            <div>
-                <h3>Download the App</h3>
-                <p>Get Clack from the App Store (iOS). Android coming soon! Enter your server address in Settings.</p>
-            </div>
-        </div>
-        <div class="step">
-            <div>
-                <h3>Pair & Talk</h3>
-                <p>Ask your agent for a pairing code, enter it in the app, and start talking. That's it.</p>
+                <h3>Download the App & Connect</h3>
+                <p>Get Clack from the App Store. Enter your domain or Tailscale IP in Settings → Server.<br>
+                <strong>Domain mode:</strong> Tap "Pair with Server" and enter the 6-character code from setup.<br>
+                <strong>Tailscale:</strong> No pairing needed — just connect directly.</p>
             </div>
         </div>
     </div>
 
-    <p style="margin-top: 32px; color: var(--text-dim); font-size: 15px;">📦 Server source: <a href="https://github.com/fbn3799/clack-skill" target="_blank" style="color: var(--accent-light);">github.com/fbn3799/clack-skill</a></p>
+    <p style="margin-top: 24px; color: var(--text-dim); font-size: 14px;">After setup, manage your server with the <code style="padding: 2px 8px; background: #1a1a2e; border-radius: 6px; font-size: 13px; color: var(--accent-light);">clack</code> command: <code style="padding: 2px 8px; background: #1a1a2e; border-radius: 6px; font-size: 13px; color: var(--accent-light);">clack status</code> · <code style="padding: 2px 8px; background: #1a1a2e; border-radius: 6px; font-size: 13px; color: var(--accent-light);">clack pair</code> · <code style="padding: 2px 8px; background: #1a1a2e; border-radius: 6px; font-size: 13px; color: var(--accent-light);">clack logs</code></p>
+
+    <p style="margin-top: 16px; color: var(--text-dim); font-size: 15px;">📦 Server source: <a href="https://github.com/fbn3799/clack-skill" target="_blank" style="color: var(--accent-light);">github.com/fbn3799/clack-skill</a></p>
 </section>
 
 <script>
