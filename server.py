@@ -580,11 +580,11 @@ def is_tailscale_ip(ip: str) -> bool:
 CLACK_GUEST_TOKEN = os.getenv("CLACK_GUEST_TOKEN", "")
 
 def verify_token(token: str, client_ip: str = "") -> bool:
-    """Verify auth token. Tailscale IPs and guest tokens bypass pairing."""
+    """Verify auth token. Tailscale IPs bypass pairing. Non-Tailscale requires valid token."""
     if is_tailscale_ip(client_ip):
         return True
     if not RELAY_AUTH_TOKEN:
-        return True
+        return False  # No token configured = Tailscale-only mode
     if CLACK_GUEST_TOKEN and hmac.compare_digest(token, CLACK_GUEST_TOKEN):
         return True
     return hmac.compare_digest(token, RELAY_AUTH_TOKEN)
