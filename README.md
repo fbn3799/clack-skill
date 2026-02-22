@@ -101,6 +101,7 @@ All configuration is via environment variables (set in your systemd service or `
 | `CLACK_MAX_INPUT_CHARS` | `300` | Max transcript length |
 | `CLACK_HISTORY_DIR` | `/var/lib/clack/history` | History storage path |
 | `CLACK_MAX_HISTORY` | `50` | Max conversation history messages |
+| `CLACK_GUEST_TOKEN` | — | Permanent pairing code for reviewers/guests (case-insensitive) |
 
 > **Tip:** For local speech mode (on-device STT/TTS), you don't need any speech API keys — only the OpenClaw gateway connection.
 
