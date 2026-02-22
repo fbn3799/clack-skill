@@ -43,49 +43,47 @@ Your agent will clone the repo, run the setup script, and configure everything. 
 git clone https://github.com/fbn3799/clack-skill.git ~/.openclaw/workspace/skills/clack
 ```
 
-### 2. Set your API key
-
-```bash
-export ELEVENLABS_API_KEY="sk_..."
-# Or use OpenAI/Deepgram instead — see Configuration below
-```
-
-### 3. Run setup
+### 2. Run setup
 
 ```bash
 bash ~/.openclaw/workspace/skills/clack/scripts/setup.sh
 ```
 
-This will:
-- Create a Python virtualenv and install dependencies
+The interactive setup will:
+- Install system dependencies (Python, venv)
 - Auto-detect your OpenClaw gateway config
-- Generate a `RELAY_AUTH_TOKEN` if not set
-- Configure a systemd service on port **9878**
+- Enable the `/v1/chat/completions` endpoint if needed
+- Prompt for API keys (ElevenLabs, OpenAI, Deepgram — all optional)
+- Ask you to choose Domain (SSL) or Tailscale connection mode
+- Generate a `RELAY_AUTH_TOKEN` and configure a systemd service
+- Print exactly what to enter in the app
+
+> **No API keys?** No problem — on-device STT/TTS works without any speech provider keys.
 
 ### 4. Connect securely
 
-All connections are encrypted. Choose one:
+All connections are encrypted. The setup script will ask you to choose:
 
-**Option A: Domain with SSL (recommended)**
-```bash
-bash scripts/setup.sh --domain clack.yourdomain.com
-```
-Requires a DNS A record pointing to your server. Auto-configures SSL via Caddy. Works with free [DuckDNS](https://www.duckdns.org) domains too.
+**Option A: Domain with SSL (recommended for remote servers)**
 
-**Option B: Tailscale**
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh && tailscale up
-```
-Install Tailscale on your server and phone. Use the server's Tailscale IP (e.g. `100.x.x.x`) in the app. No domain or SSL setup needed.
+Requires a DNS A record pointing to your server. Setup auto-configures SSL via Caddy. Works with free [DuckDNS](https://www.duckdns.org) domains too.
+
+After setup, **pair the app**: the setup script prints a 6-character pairing code. Enter it in the app under Settings → Server → Pair with Server. Codes expire after 5 minutes — generate new ones with `bash scripts/pair.sh`.
+
+**Option B: Tailscale (simplest for personal use)**
+
+Install Tailscale on your server and phone. Use the server's Tailscale IP (e.g. `100.x.x.x`) in the app. **No pairing needed** — Tailscale connections are trusted automatically.
 
 **Firewall port 9878** from the public internet — only allow localhost and Tailscale access.
 
-### 5. Pair the iOS app
+### 5. Open the app and connect
 
 1. Open the Clack iOS app ([App Store](https://clack-app.com) or build from source)
-2. On your server, generate a pairing code: the app will guide you, or ask your OpenClaw agent
-3. Enter the 6-character code in the app within 5 minutes
-4. The app receives an auth token and connects automatically
+2. Go to Settings → Server
+3. Enter your domain or Tailscale IP
+4. **Domain mode**: Tap "Pair with Server" and enter the code from setup
+5. **Tailscale mode**: Just connect — no pairing required
+6. Tap the microphone and start talking!
 
 ## Configuration
 
