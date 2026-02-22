@@ -40,13 +40,13 @@ Your agent will clone the repo, run the setup script, and configure everything. 
 ### 1. Install the skill
 
 ```bash
-git clone https://github.com/fbn3799/clack-skill.git ~/.openclaw/skills/clack
+git clone https://github.com/fbn3799/clack-skill.git ~/.openclaw/workspace/skills/clack
 ```
 
 ### 2. Run setup
 
 ```bash
-bash ~/.openclaw/skills/clack/scripts/setup.sh
+bash ~/.openclaw/workspace/skills/clack/scripts/setup.sh
 ```
 
 The interactive setup will:
