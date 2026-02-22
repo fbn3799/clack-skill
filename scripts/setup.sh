@@ -3,6 +3,11 @@
 # Usage: sudo bash scripts/setup.sh [--port 9878] [--domain clack.example.com]
 set -euo pipefail
 
+if [[ $EUID -ne 0 ]]; then
+  echo "Please run with sudo: sudo bash $0 $*"
+  exit 1
+fi
+
 PORT="${VOICE_RELAY_PORT:-9878}"
 DOMAIN=""
 
