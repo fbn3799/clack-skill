@@ -66,6 +66,28 @@ def pcm_to_wav(pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, bit
     return buf.getvalue()
 
 
+def _get_agent_name() -> str:
+    """Read agent name from IDENTITY.md or env, with fallback."""
+    env_name = os.getenv("CLACK_AGENT_NAME", "")
+    if env_name:
+        return env_name
+    # Try common IDENTITY.md locations
+    for path in [
+        Path.home() / ".openclaw" / "workspace" / "IDENTITY.md",
+        Path("/root/.openclaw/workspace/IDENTITY.md"),
+    ]:
+        try:
+            text = path.read_text()
+            for line in text.splitlines():
+                if line.startswith("- **Name:**"):
+                    name = line.split("**Name:**")[-1].strip()
+                    if name:
+                        return name
+        except (FileNotFoundError, PermissionError):
+            continue
+    return ""
+
+
 def _is_echo(transcript: str, last_response: str) -> bool:
     t = transcript.lower().strip().replace("[speaker speaker_0]: ", "")
     r = last_response.lower().strip()
@@ -869,7 +891,7 @@ async def info(request: Request, token: str = Query(default="")):
     if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     return {
-        "agentName": os.getenv("CLACK_AGENT_NAME", "Storm"),
+        "agentName": _get_agent_name(),
         "stt": {
             "available": list(available_stt.keys()),
             "default": os.getenv("STT_PROVIDER", "elevenlabs").lower()
