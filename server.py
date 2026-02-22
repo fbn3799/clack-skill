@@ -953,9 +953,12 @@ async def list_sessions(request: Request, token: str = Query(default="")):
                 raw_sessions = data.get("result", {}).get("details", {}).get("sessions", [])
                 sessions = []
                 for s in raw_sessions:
+                    name = s.get("displayName", "")
+                    if not name:
+                        continue
                     sessions.append({
                         "key": s.get("key", ""),
-                        "name": s.get("displayName", s.get("key", "")),
+                        "name": name,
                         "channel": s.get("channel", ""),
                     })
                 return {"sessions": sessions}
