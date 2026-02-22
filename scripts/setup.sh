@@ -140,6 +140,13 @@ python3 -m venv "$SKILL_DIR/venv"
 "$SKILL_DIR/venv/bin/pip" install -q fastapi uvicorn aiohttp websockets
 echo "  ✓ Python dependencies installed"
 
+# ── CLI command ──
+
+if [[ -d /usr/local/bin ]]; then
+  ln -sf "$SKILL_DIR/scripts/clack" /usr/local/bin/clack
+  echo "  ✓ 'clack' command installed (clack setup / clack pair / clack logs)"
+fi
+
 # ── Connection mode ──
 
 echo ""
@@ -333,7 +340,7 @@ if [[ -n "$DOMAIN" ]]; then
   echo ""
   echo "  Then tap Pair and enter the pairing code."
   echo "  Generate a code anytime with:"
-  echo "    sudo bash scripts/pair.sh"
+  echo "    clack pair"
   echo ""
   # Auto-generate first pairing code
   sleep 2  # wait for service to start

@@ -68,7 +68,7 @@ All connections are encrypted. The setup script will ask you to choose:
 
 Requires a DNS A record pointing to your server. Setup auto-configures SSL via Caddy. Works with free [DuckDNS](https://www.duckdns.org) domains too.
 
-After setup, **pair the app**: the setup script prints a 6-character pairing code. Enter it in the app under Settings → Server → Pair with Server. Codes expire after 5 minutes — generate new ones with `bash scripts/pair.sh`.
+After setup, **pair the app**: the setup script prints a 6-character pairing code. Enter it in the app under Settings → Server → Pair with Server. Codes expire after 5 minutes — generate new ones with `clack pair`.
 
 **Option B: Tailscale (simplest for personal use)**
 
@@ -184,9 +184,11 @@ Choose providers per direction in **Settings → Voice**:
 ## Server Management
 
 ```bash
-systemctl status clack       # Check status
-systemctl restart clack      # Restart
-journalctl -u clack -f       # View logs
+clack status     # Check service status
+clack restart    # Restart the server
+clack logs       # Tail logs
+clack pair       # Generate a new pairing code
+clack uninstall  # Remove service and venv
 ```
 
 ## Troubleshooting

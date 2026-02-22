@@ -20,6 +20,12 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Remove CLI symlink
+if [[ -L /usr/local/bin/clack ]]; then
+  rm -f /usr/local/bin/clack
+  echo "  ✓ 'clack' command removed"
+fi
+
 # Remove venv
 if [[ -d "$SKILL_DIR/venv" ]]; then
   rm -rf "$SKILL_DIR/venv"
