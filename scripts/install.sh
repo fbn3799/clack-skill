@@ -37,5 +37,5 @@ fi
 
 echo ""
 
-# Run setup
-exec bash "$INSTALL_DIR/scripts/setup.sh" "$@"
+# Run setup (restore terminal stdin for interactive prompts)
+exec bash "$INSTALL_DIR/scripts/setup.sh" "$@" </dev/tty
