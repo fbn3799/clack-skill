@@ -40,7 +40,7 @@ Your agent will clone the repo, run the setup script, and configure everything. 
 ### 1. Install & set up
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fbn3799/clack-skill/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fbn3799/clack-skill/master/scripts/install.sh | sudo bash
 ```
 
 This single command clones the repo, installs dependencies, and runs the interactive setup.
