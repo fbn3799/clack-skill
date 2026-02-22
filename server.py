@@ -72,10 +72,14 @@ def _get_agent_name() -> str:
     if env_name:
         return env_name
     # Try common IDENTITY.md locations
-    for path in [
-        Path.home() / ".openclaw" / "workspace" / "IDENTITY.md",
-        Path("/root/.openclaw/workspace/IDENTITY.md"),
-    ]:
+    candidates = [Path.home() / ".openclaw" / "workspace" / "IDENTITY.md"]
+    try:
+        for p in Path("/home").iterdir():
+            candidates.append(p / ".openclaw" / "workspace" / "IDENTITY.md")
+    except (FileNotFoundError, PermissionError):
+        pass
+    candidates.append(Path("/root/.openclaw/workspace/IDENTITY.md"))
+    for path in candidates:
         try:
             text = path.read_text()
             for line in text.splitlines():
