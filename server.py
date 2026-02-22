@@ -934,6 +934,36 @@ async def redeem_pairing(code: str = Query(default="")):
         return JSONResponse({"error": "invalid or expired code"}, status_code=401)
 
 
+@app.get("/sessions")
+async def list_sessions(request: Request, token: str = Query(default="")):
+    """List available OpenClaw sessions."""
+    if not verify_token(token, request.client.host):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
+                headers=headers,
+                json={"tool": "sessions_list", "args": {"limit": 50, "messageLimit": 0}},
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+              if resp.status == 200:
+                data = await resp.json()
+                raw_sessions = data.get("result", {}).get("details", {}).get("sessions", [])
+                sessions = []
+                for s in raw_sessions:
+                    sessions.append({
+                        "key": s.get("key", ""),
+                        "name": s.get("displayName", s.get("key", "")),
+                        "channel": s.get("channel", ""),
+                    })
+                return {"sessions": sessions}
+    except Exception as e:
+        print(f"[Sessions] Error: {e}")
+    return {"sessions": []}
+
+
 @app.get("/history")
 async def get_history(request: Request, token: str = Query(default="")):
     if not verify_token(token, request.client.host):
