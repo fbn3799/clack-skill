@@ -241,7 +241,7 @@ if [[ -n "$DOMAIN" ]]; then
       cat >> "$CADDY_CONF" <<CADEOF
 
 $DOMAIN {
-    reverse_proxy localhost:$PORT
+    reverse_proxy localhost:$PORT # clack
 }
 CADEOF
       systemctl reload caddy 2>/dev/null || caddy reload --config "$CADDY_CONF" 2>/dev/null

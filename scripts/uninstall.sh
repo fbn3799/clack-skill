@@ -26,6 +26,20 @@ if [[ -L /usr/local/bin/clack ]]; then
   echo "  ✓ 'clack' command removed"
 fi
 
+# Remove Caddy reverse proxy config (if we added it)
+CADDY_CONF="/etc/caddy/Caddyfile"
+if [[ -f "$CADDY_CONF" ]] && grep -q "reverse_proxy localhost:.*# clack" "$CADDY_CONF" 2>/dev/null; then
+  # Remove the clack server block
+  python3 -c "
+import re
+conf = open('$CADDY_CONF').read()
+# Remove block: domain { ... reverse_proxy localhost:PORT # clack ... }
+conf = re.sub(r'\n[^\s{]+\s*\{[^}]*# clack[^}]*\}\n?', '\n', conf)
+open('$CADDY_CONF', 'w').write(conf)
+" 2>/dev/null && echo "  ✓ Caddy reverse proxy config removed"
+  systemctl reload caddy 2>/dev/null || true
+fi
+
 # Remove venv
 if [[ -d "$SKILL_DIR/venv" ]]; then
   rm -rf "$SKILL_DIR/venv"
@@ -36,4 +50,6 @@ echo ""
 echo "Uninstall complete."
 echo "The skill directory ($SKILL_DIR) is still on disk."
 echo "To fully remove: rm -rf $SKILL_DIR"
+echo ""
+echo "Note: Tailscale and Caddy were NOT removed (you may use them for other things)."
 echo ""
