@@ -807,7 +807,7 @@ class VoiceSession:
                 payload = {"model": "openclaw", "messages": messages, "max_tokens": 150}
                 async with session.post(
                     f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
-                    headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=60)
+                    headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
@@ -1200,4 +1200,4 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
 
 if __name__ == "__main__":
     port = int(os.getenv("VOICE_RELAY_PORT", "9878"))
-    uvicorn.run(app, host="0.0.0.0", port=port, ws_ping_interval=20, ws_ping_timeout=30)
+    uvicorn.run(app, host="0.0.0.0", port=port, ws_ping_interval=20, ws_ping_timeout=None)
