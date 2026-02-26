@@ -48,7 +48,7 @@ if [[ -f "$OPENCLAW_CONFIG" ]]; then
   if command -v python3 &>/dev/null; then
     _GW_TOKEN=$(python3 -c "import json; c=json.load(open('$OPENCLAW_CONFIG')); print(c.get('gateway',{}).get('auth',{}).get('token',''))" 2>/dev/null)
     _GW_PORT=$(python3 -c "import json; c=json.load(open('$OPENCLAW_CONFIG')); print(c.get('gateway',{}).get('port',18789))" 2>/dev/null)
-    [[ -n "$_GW_TOKEN" ]] && OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-$_GW_TOKEN}"
+    if [[ -n "$_GW_TOKEN" ]]; then OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-$_GW_TOKEN}"; fi
     OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${_GW_PORT:-18789}}"
   fi
 else
@@ -165,9 +165,9 @@ _prompt_key DEEPGRAM_API_KEY "Deepgram"
 
 # Summary
 echo ""
-[[ -n "${OPENAI_API_KEY:-}" ]] && echo "  ✓ OpenAI key saved"
-[[ -n "${ELEVENLABS_API_KEY:-}" ]] && echo "  ✓ ElevenLabs key saved"
-[[ -n "${DEEPGRAM_API_KEY:-}" ]] && echo "  ✓ Deepgram key saved"
+if [[ -n "${OPENAI_API_KEY:-}" ]]; then echo "  ✓ OpenAI key saved"; fi
+if [[ -n "${ELEVENLABS_API_KEY:-}" ]]; then echo "  ✓ ElevenLabs key saved"; fi
+if [[ -n "${DEEPGRAM_API_KEY:-}" ]]; then echo "  ✓ Deepgram key saved"; fi
 
 if [[ -z "${OPENAI_API_KEY:-}" && -z "${ELEVENLABS_API_KEY:-}" && -z "${DEEPGRAM_API_KEY:-}" ]]; then
   echo ""
