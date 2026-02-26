@@ -579,22 +579,6 @@ def is_tailscale_ip(ip: str) -> bool:
 
 CLACK_GUEST_TOKEN = os.getenv("CLACK_GUEST_TOKEN", "")
 
-
-def _get_client_ip(request_or_websocket) -> str:
-    """Extract real client IP, checking reverse proxy headers first."""
-    # X-Forwarded-For can contain multiple IPs: client, proxy1, proxy2
-    forwarded = getattr(request_or_websocket, 'headers', {}).get("x-forwarded-for", "")
-    if forwarded:
-        ip = forwarded.split(",")[0].strip()
-        if ip:
-            return ip
-    real_ip = getattr(request_or_websocket, 'headers', {}).get("x-real-ip", "")
-    if real_ip:
-        return real_ip.strip()
-    client = getattr(request_or_websocket, 'client', None)
-    return client.host if client else ""
-
-
 def verify_token(token: str, client_ip: str = "") -> bool:
     """Verify auth token. Tailscale IPs bypass pairing. Non-Tailscale requires valid token."""
     if is_tailscale_ip(client_ip):
@@ -893,7 +877,7 @@ DEEPGRAM_VOICES = [
 
 @app.get("/voices")
 async def list_voices(request: Request, token: str = Query(default=""), provider: str = Query(default="")):
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     default = os.getenv("TTS_VOICE", "bIHbv24MWmeRgasZH58o")
 
@@ -908,7 +892,7 @@ async def list_voices(request: Request, token: str = Query(default=""), provider
 
 @app.get("/info")
 async def info(request: Request, token: str = Query(default="")):
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     return {
         "agentName": _get_agent_name(),
@@ -926,7 +910,7 @@ async def info(request: Request, token: str = Query(default="")):
 @app.get("/pair")
 async def create_pairing(request: Request, token: str = Query(default="")):
     """Generate a one-time pairing code. Requires admin auth (relay token)."""
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     code = _generate_pairing_code()
     print(f"[Pair] Generated code: {code} (expires in {PAIRING_TTL}s)")
@@ -953,7 +937,7 @@ async def redeem_pairing(code: str = Query(default="")):
 @app.get("/sessions")
 async def list_sessions(request: Request, token: str = Query(default="")):
     """List available OpenClaw sessions."""
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     try:
         headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
@@ -985,14 +969,14 @@ async def list_sessions(request: Request, token: str = Query(default="")):
 
 @app.get("/history")
 async def get_history(request: Request, token: str = Query(default="")):
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     history = load_history()
     return {"messages": history, "count": len(history)}
 
 @app.delete("/history")
 async def clear_history(request: Request, token: str = Query(default="")):
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     path = _history_path()
     if path.exists():
@@ -1003,7 +987,7 @@ async def clear_history(request: Request, token: str = Query(default="")):
 @app.get("/context")
 async def get_context(request: Request, token: str = Query(default="")):
     """Get the current user context."""
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     return load_context() or {"text": ""}
 
@@ -1011,7 +995,7 @@ async def get_context(request: Request, token: str = Query(default="")):
 @app.put("/context")
 async def set_context_put(request: Request, token: str = Query(default=""), text: str = Query(default="")):
     """Set user context via query param."""
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     if not text:
         return JSONResponse({"error": "text required"}, status_code=400)
@@ -1024,7 +1008,7 @@ async def set_context_put(request: Request, token: str = Query(default=""), text
 @app.post("/context")
 async def set_context_post(request: Request, token: str = Query(default="")):
     """Set user context via JSON body: {"text": "..."}"""
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     try:
         body = await request.json()
@@ -1041,7 +1025,7 @@ async def set_context_post(request: Request, token: str = Query(default="")):
 @app.delete("/context")
 async def clear_context(token: str = Query(default="")):
     """Clear user context."""
-    if not verify_token(token, _get_client_ip(request)):
+    if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     if CONTEXT_FILE.exists():
         CONTEXT_FILE.unlink()
@@ -1053,8 +1037,8 @@ async def clear_context(token: str = Query(default="")):
 @app.websocket("/voice")
 async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
     await websocket.accept()
-    client_ip = _get_client_ip(websocket)
-    print(f"[WS] Client connected: {websocket.client} (real IP: {client_ip})")
+    print(f"[WS] Client connected: {websocket.client}")
+    client_ip = websocket.client.host if websocket.client else ""
     authenticated = verify_token(token, client_ip) if token else (is_tailscale_ip(client_ip) or not RELAY_AUTH_TOKEN)
     session = None
     try:
