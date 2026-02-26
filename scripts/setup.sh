@@ -110,13 +110,13 @@ _load_existing_key() {
   if [[ -z "${!varname:-}" && -f "$CONFIG_FILE" ]]; then
     local val
     val=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('$varname',''))" 2>/dev/null || true)
-    [[ -n "$val" ]] && export "$varname=$val"
+    if [[ -n "$val" ]]; then export "$varname=$val"; fi
   fi
   # Fallback: read from systemd service file (legacy installs)
   if [[ -z "${!varname:-}" && -f "$SERVICE_FILE" ]]; then
     local val
     val=$(grep -oP "^Environment=${varname}=\K.*" "$SERVICE_FILE" 2>/dev/null || true)
-    [[ -n "$val" ]] && export "$varname=$val"
+    if [[ -n "$val" ]]; then export "$varname=$val"; fi
   fi
 }
 _load_existing_key OPENAI_API_KEY
