@@ -394,35 +394,52 @@ def _resample_24k_to_16k(data: bytes) -> bytes:
 
 # ── Provider factory ──
 
-def create_stt_provider() -> Optional[STTProvider]:
-    provider = os.getenv("STT_PROVIDER", "elevenlabs").lower()
-    if provider == "elevenlabs":
-        key = os.getenv("ELEVENLABS_API_KEY", "")
-        return ElevenLabsSTT(key) if key else None
-    elif provider == "openai":
-        key = os.getenv("OPENAI_API_KEY", "")
-        return OpenAISTT(key) if key else None
-    elif provider == "deepgram":
-        key = os.getenv("DEEPGRAM_API_KEY", "")
-        return DeepgramSTT(key) if key else None
-    print(f"[STT] Unknown provider: {provider}")
-    return None
+_STT_FACTORIES = {
+    "elevenlabs": lambda: ElevenLabsSTT(k) if (k := os.getenv("ELEVENLABS_API_KEY", "")) else None,
+    "openai": lambda: OpenAISTT(k) if (k := os.getenv("OPENAI_API_KEY", "")) else None,
+    "deepgram": lambda: DeepgramSTT(k) if (k := os.getenv("DEEPGRAM_API_KEY", "")) else None,
+}
+
+_TTS_FACTORIES = {
+    "elevenlabs": lambda v: ElevenLabsTTS(k, v or "bIHbv24MWmeRgasZH58o") if (k := os.getenv("ELEVENLABS_API_KEY", "")) else None,
+    "openai": lambda v: OpenAITTS(k, v or "alloy") if (k := os.getenv("OPENAI_API_KEY", "")) else None,
+    "deepgram": lambda v: DeepgramTTS(k, v or "aura-asteria-en") if (k := os.getenv("DEEPGRAM_API_KEY", "")) else None,
+}
 
 
-def create_tts_provider() -> Optional[TTSProvider]:
-    provider = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
+def create_stt_provider() -> tuple[Optional[STTProvider], str]:
+    preferred = os.getenv("STT_PROVIDER", "elevenlabs").lower()
+    # Try preferred provider first
+    if preferred in _STT_FACTORIES:
+        result = _STT_FACTORIES[preferred]()
+        if result:
+            return result, preferred
+    # Fallback to first available
+    for name, factory in _STT_FACTORIES.items():
+        if name != preferred:
+            result = factory()
+            if result:
+                print(f"[STT] {preferred} not available, falling back to {name}")
+                return result, name
+    return None, preferred
+
+
+def create_tts_provider() -> tuple[Optional[TTSProvider], str]:
+    preferred = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
     voice = os.getenv("TTS_VOICE", "")
-    if provider == "elevenlabs":
-        key = os.getenv("ELEVENLABS_API_KEY", "")
-        return ElevenLabsTTS(key, voice or "bIHbv24MWmeRgasZH58o") if key else None
-    elif provider == "openai":
-        key = os.getenv("OPENAI_API_KEY", "")
-        return OpenAITTS(key, voice or "alloy") if key else None
-    elif provider == "deepgram":
-        key = os.getenv("DEEPGRAM_API_KEY", "")
-        return DeepgramTTS(key, voice or "aura-asteria-en") if key else None
-    print(f"[TTS] Unknown provider: {provider}")
-    return None
+    # Try preferred provider first
+    if preferred in _TTS_FACTORIES:
+        result = _TTS_FACTORIES[preferred](voice)
+        if result:
+            return result, preferred
+    # Fallback to first available
+    for name, factory in _TTS_FACTORIES.items():
+        if name != preferred:
+            result = factory(voice)
+            if result:
+                print(f"[TTS] {preferred} not available, falling back to {name}")
+                return result, name
+    return None, preferred
 
 
 # ── App setup ──
@@ -496,36 +513,27 @@ DEFAULT_SYSTEM_PROMPT = (
     "Read-only actions (search, weather, info lookups) are fine without confirmation."
 )
 
-stt_provider = create_stt_provider()
-tts_provider = create_tts_provider()
+stt_provider, STT_NAME = create_stt_provider()
+tts_provider, TTS_NAME = create_tts_provider()
 
 
 def detect_available_providers():
     """Detect all available STT and TTS providers based on API keys."""
     stt_providers = {}
     tts_providers = {}
-
-    el_key = os.getenv("ELEVENLABS_API_KEY", "")
-    oai_key = os.getenv("OPENAI_API_KEY", "")
-    dg_key = os.getenv("DEEPGRAM_API_KEY", "")
-
-    if el_key:
-        stt_providers["elevenlabs"] = ElevenLabsSTT(el_key)
-        tts_providers["elevenlabs"] = ElevenLabsTTS(el_key, os.getenv("TTS_VOICE", "bIHbv24MWmeRgasZH58o"))
-    if oai_key:
-        stt_providers["openai"] = OpenAISTT(oai_key)
-        tts_providers["openai"] = OpenAITTS(oai_key, os.getenv("TTS_VOICE", "") or "alloy")
-    if dg_key:
-        stt_providers["deepgram"] = DeepgramSTT(dg_key)
-        tts_providers["deepgram"] = DeepgramTTS(dg_key, os.getenv("TTS_VOICE", "") or "aura-asteria-en")
-
+    voice = os.getenv("TTS_VOICE", "")
+    for name, factory in _STT_FACTORIES.items():
+        result = factory()
+        if result:
+            stt_providers[name] = result
+    for name, factory in _TTS_FACTORIES.items():
+        result = factory(voice)
+        if result:
+            tts_providers[name] = result
     return stt_providers, tts_providers
 
 
 available_stt, available_tts = detect_available_providers()
-
-STT_NAME = os.getenv("STT_PROVIDER", "elevenlabs")
-TTS_NAME = os.getenv("TTS_PROVIDER", "elevenlabs")
 print(f"[Clack] Starting voice relay server...")
 print(f"[Clack] STT: {STT_NAME} ({'ready' if stt_provider else 'NOT CONFIGURED'})")
 print(f"[Clack] TTS: {TTS_NAME} ({'ready' if tts_provider else 'NOT CONFIGURED'})")
