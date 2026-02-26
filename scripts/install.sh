@@ -11,9 +11,9 @@ fi
 
 # Preserve real user's home for OpenClaw config detection
 if [[ -n "${SUDO_USER:-}" ]]; then
-  INSTALL_DIR="$(eval echo "~$SUDO_USER")/.openclaw/workspace/skills/clack"
+  INSTALL_DIR="$(eval echo "~$SUDO_USER")/.openclaw/skills/clack"
 else
-  INSTALL_DIR="${HOME}/.openclaw/workspace/skills/clack"
+  INSTALL_DIR="${HOME}/.openclaw/skills/clack"
 fi
 
 echo "=== Clack Voice Relay — Install ==="
