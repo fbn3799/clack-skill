@@ -97,8 +97,7 @@ clack uninstall  # Remove service and venv
 
 ## Client App
 
-📱 **iOS** — Available on the [App Store](https://clack-app.com) (or build from source at [github.com/fbn3799/clack-app](https://github.com/fbn3799/clack-app))
-🤖 **Android** — Coming soon!
+📱 **iOS & Android apps coming soon!** Check [clack-app.com](https://clack-app.com) for App Store and Play Store links once published. The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
 
 ## Security
 

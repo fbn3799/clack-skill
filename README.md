@@ -10,7 +10,7 @@
 
 Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that sets up a WebSocket voice relay server. It bridges voice input through speech-to-text → your OpenClaw agent → text-to-speech, enabling natural voice conversations.
 
-📱 **[Available for iOS](https://clack-app.com)** — Android coming soon!
+📱 **iOS & Android apps coming soon!** Check [clack-app.com](https://clack-app.com) for App Store and Play Store links once published. The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
 
 ## Quickstart
 
@@ -77,7 +77,7 @@ Install Tailscale on your server and phone. Use the server's Tailscale IP (e.g. 
 
 ### 3. Open the app and connect
 
-1. Open the Clack iOS app ([App Store](https://clack-app.com) or build from source)
+1. Open the Clack app ([clack-app.com](https://clack-app.com) once published, or build your own client)
 2. Go to Settings → Server
 3. Enter your domain or Tailscale IP
 4. **Domain mode**: Tap "Pair with Server" and enter the code from setup
