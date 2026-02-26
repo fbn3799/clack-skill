@@ -751,11 +751,16 @@ class VoiceSession:
         - Common punctuation: . , ! ? ; : ' " - ( ) @ # & + = %
         - Newlines and tabs (for lists and structure)
         - Currency symbols, accented characters, emoji
-        Strips everything else (control chars, escape sequences, slashes, etc.).
+        Strips everything else (control chars, escape sequences, slashes,
+        IP addresses, domains, URLs, etc.).
         """
         import re as _re
         # Keep: word chars (any script), digits, whitespace, common punctuation (no slashes)
         text = _re.sub(r'[^\w\s.,!?;:\'\"()\-–—@#&+=*%€$£¥°…]', '', text, flags=_re.UNICODE)
+        # Strip IP addresses (with optional port)
+        text = _re.sub(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b', '', text)
+        # Strip domains (e.g. example.com, sub.example.co.uk)
+        text = _re.sub(r'\b[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}(\.[a-zA-Z]{2,})*(:\d+)?\b', '', text)
         # Collapse excessive whitespace
         text = _re.sub(r'\n{4,}', '\n\n\n', text)
         text = _re.sub(r' {4,}', '   ', text)
