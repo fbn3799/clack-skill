@@ -212,6 +212,8 @@ See [SKILL.md](SKILL.md) for full protocol docs, WebSocket message reference, an
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 
+See [ClawHub](https://clawhub.ai/fbn3799/clack) for security ratings and reviews.
+
 ## License
 
 MIT
