@@ -150,7 +150,7 @@ _prompt_key() {
     esac
   else
     read -rp "  $label API key (Enter to skip): " _KEY
-    [[ -n "$_KEY" ]] && export "$varname=$_KEY"
+    if [[ -n "$_KEY" ]]; then export "$varname=$_KEY"; fi
   fi
 }
 
