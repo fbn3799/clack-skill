@@ -743,14 +743,24 @@ class VoiceSession:
 
     @staticmethod
     def _sanitize_context(text: str) -> str:
-        """Sanitize user-provided context to mitigate prompt injection."""
+        """Sanitize user-provided context for voice-first input.
+
+        Only allows natural language characters that could reasonably
+        appear in spoken or dictated text:
+        - Letters (any script), numbers, whitespace
+        - Common punctuation: . , ! ? ; : ' " - ( ) / @ # & + = %
+        - Newlines and tabs (for lists and structure)
+        - Currency symbols, accented characters, emoji
+        Strips everything else (control chars, escape sequences, etc.).
+        """
         import re as _re
-        # Strip control characters (keep newlines and tabs)
-        text = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-        # Collapse excessive newlines
+        # Keep: word chars (any script), digits, whitespace, common punctuation
+        text = _re.sub(r'[^\w\s.,!?;:\'\"()\-–—/\\@#&+=*%€$£¥°…\[\]{}~`^|<>]', '', text, flags=_re.UNICODE)
+        # Collapse excessive whitespace
         text = _re.sub(r'\n{4,}', '\n\n\n', text)
+        text = _re.sub(r' {4,}', '   ', text)
         # Truncate
-        return text[:1000]
+        return text.strip()[:1000]
 
     def _build_system_prompt(self, config: dict) -> str:
         """Build system prompt with optional user context injected."""

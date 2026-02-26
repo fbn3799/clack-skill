@@ -122,6 +122,12 @@ All endpoints except `GET /health` and `POST /pair` require a valid auth token (
 - The app enforces encrypted connections — no unencrypted public access
 - Port 9878 should be firewalled; only accessible via localhost and Tailscale
 
+### Input Sanitization
+All user-facing text inputs are sanitized before processing:
+- **Voice transcripts:** Capped at 300 characters (`CLACK_MAX_INPUT_CHARS`), echo detection filters feedback loops, hallucination detection discards nonsense STT output
+- **User context:** Stripped to natural-language characters only (letters, numbers, common punctuation, whitespace). Control characters, escape sequences, and non-printable characters are removed. Capped at 1000 characters. Context is wrapped in explicit delimiters before injection into the system prompt.
+- **No shell execution:** All external communication uses structured HTTP/WebSocket APIs. No user input is ever passed to a shell.
+
 ### Data Privacy
 - No analytics, tracking, or telemetry
 - Voice audio goes to your server and only to the providers you choose
