@@ -94,45 +94,78 @@ fi
 
 # ── API keys ──
 
+# Load existing keys from systemd service file
+SERVICE_FILE="/etc/systemd/system/clack.service"
+_load_existing_key() {
+  local varname="$1"
+  if [[ -z "${!varname:-}" && -f "$SERVICE_FILE" ]]; then
+    local val
+    val=$(grep -oP "^Environment=${varname}=\K.*" "$SERVICE_FILE" 2>/dev/null || true)
+    [[ -n "$val" ]] && export "$varname=$val"
+  fi
+}
+_load_existing_key OPENAI_API_KEY
+_load_existing_key ELEVENLABS_API_KEY
+_load_existing_key DEEPGRAM_API_KEY
+
+# Prompt for each key: keep / update / delete
+_prompt_key() {
+  local varname="$1" label="$2"
+  local existing="${!varname:-}"
+  if [[ -n "$existing" ]]; then
+    local masked="${existing:0:4}...${existing: -4}"
+    echo "  $label: $masked"
+    read -rp "    [K]eep / [U]pdate / [D]elete (default: keep): " _choice
+    case "${_choice,,}" in
+      u|update)
+        read -rp "    New $label key: " _KEY
+        if [[ -n "$_KEY" ]]; then
+          export "$varname=$_KEY"
+        else
+          echo "    No key entered, keeping existing."
+        fi
+        ;;
+      d|delete)
+        unset "$varname"
+        echo "    ✓ $label key removed"
+        ;;
+      *)
+        echo "    ✓ Kept existing key"
+        ;;
+    esac
+  else
+    read -rp "  $label API key (Enter to skip): " _KEY
+    [[ -n "$_KEY" ]] && export "$varname=$_KEY"
+  fi
+}
+
 echo ""
-echo "API Keys (press Enter to skip any you don't have):"
+echo "API Keys:"
 echo "  Each provider offers both STT and TTS."
 echo ""
 
-if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-  read -rp "  OpenAI API key: " _KEY
-  [[ -n "$_KEY" ]] && OPENAI_API_KEY="$_KEY"
-else
-  echo "  OpenAI: ✓ (from env)"
-fi
-
-if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
-  read -rp "  ElevenLabs API key: " _KEY
-  [[ -n "$_KEY" ]] && ELEVENLABS_API_KEY="$_KEY"
-else
-  echo "  ElevenLabs: ✓ (from env)"
-fi
-
-if [[ -z "${DEEPGRAM_API_KEY:-}" ]]; then
-  read -rp "  Deepgram API key: " _KEY
-  [[ -n "$_KEY" ]] && DEEPGRAM_API_KEY="$_KEY"
-else
-  echo "  Deepgram: ✓ (from env)"
-fi
+_prompt_key OPENAI_API_KEY "OpenAI"
+_prompt_key ELEVENLABS_API_KEY "ElevenLabs"
+_prompt_key DEEPGRAM_API_KEY "Deepgram"
 
 # Summary
+echo ""
 [[ -n "${OPENAI_API_KEY:-}" ]] && echo "  ✓ OpenAI key saved"
 [[ -n "${ELEVENLABS_API_KEY:-}" ]] && echo "  ✓ ElevenLabs key saved"
 [[ -n "${DEEPGRAM_API_KEY:-}" ]] && echo "  ✓ Deepgram key saved"
 
 if [[ -z "${OPENAI_API_KEY:-}" && -z "${ELEVENLABS_API_KEY:-}" && -z "${DEEPGRAM_API_KEY:-}" ]]; then
   echo ""
-  echo "  ℹ️  No provider keys entered — server-side STT/TTS won't be available."
-  echo "     The app can still use on-device STT/TTS."
+  echo "  No provider keys configured — server-side STT/TTS won't be available."
+  echo "  The app can still use on-device STT/TTS."
 fi
 
 # ── Auth token ──
 
+# Load existing auth token from service file
+if [[ -z "${RELAY_AUTH_TOKEN:-}" && -f "$SERVICE_FILE" ]]; then
+  RELAY_AUTH_TOKEN=$(grep -oP "^Environment=RELAY_AUTH_TOKEN=\K.*" "$SERVICE_FILE" 2>/dev/null || true)
+fi
 if [[ -z "${RELAY_AUTH_TOKEN:-}" ]]; then
   RELAY_AUTH_TOKEN="$(openssl rand -base64 32 | tr -d '/+=' | head -c 44)"
 fi
