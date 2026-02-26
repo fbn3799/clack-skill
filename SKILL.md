@@ -7,17 +7,9 @@ metadata:
     requires:
       env:
         - OPENCLAW_GATEWAY_TOKEN
-        - RELAY_AUTH_TOKEN
-        - ELEVENLABS_API_KEY
-        - OPENAI_API_KEY
-        - DEEPGRAM_API_KEY
       bins:
         - python3
         - systemctl
-      anyBins:
-        - caddy
-        - nginx
-        - tailscale
     primaryEnv: OPENCLAW_GATEWAY_TOKEN
     os:
       - linux
