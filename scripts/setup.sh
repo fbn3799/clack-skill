@@ -102,10 +102,17 @@ fi
 
 # ── API keys ──
 
-# Load existing keys from systemd service file
+# Load existing keys from config file or systemd service file (legacy)
 SERVICE_FILE="/etc/systemd/system/clack.service"
+CONFIG_FILE="$SKILL_DIR/config.json"
 _load_existing_key() {
   local varname="$1"
+  if [[ -z "${!varname:-}" && -f "$CONFIG_FILE" ]]; then
+    local val
+    val=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('$varname',''))" 2>/dev/null || true)
+    [[ -n "$val" ]] && export "$varname=$val"
+  fi
+  # Fallback: read from systemd service file (legacy installs)
   if [[ -z "${!varname:-}" && -f "$SERVICE_FILE" ]]; then
     local val
     val=$(grep -oP "^Environment=${varname}=\K.*" "$SERVICE_FILE" 2>/dev/null || true)
@@ -331,18 +338,28 @@ fi
 
 SERVICE_FILE="/etc/systemd/system/clack.service"
 
+# ── Provider config file ──
+# Provider keys go in a config file, not env vars
+CONFIG_FILE="$SKILL_DIR/config.json"
+python3 -c "
+import json
+c = {}
+el = '${ELEVENLABS_API_KEY:-}'
+oa = '${OPENAI_API_KEY:-}'
+dg = '${DEEPGRAM_API_KEY:-}'
+if el: c['ELEVENLABS_API_KEY'] = el
+if oa: c['OPENAI_API_KEY'] = oa
+if dg: c['DEEPGRAM_API_KEY'] = dg
+json.dump(c, open('$CONFIG_FILE', 'w'), indent=2)
+"
+chmod 600 "$CONFIG_FILE"
+echo "  ✓ Provider config written to $CONFIG_FILE"
+
 ENV_LINES="Environment=OPENCLAW_GATEWAY_URL=$OPENCLAW_GATEWAY_URL
 Environment=OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_GATEWAY_TOKEN
 Environment=RELAY_AUTH_TOKEN=$RELAY_AUTH_TOKEN
 Environment=VOICE_RELAY_PORT=$PORT
 Environment=PYTHONUNBUFFERED=1"
-
-[[ -n "${ELEVENLABS_API_KEY:-}" ]] && ENV_LINES="$ENV_LINES
-Environment=ELEVENLABS_API_KEY=$ELEVENLABS_API_KEY"
-[[ -n "${OPENAI_API_KEY:-}" ]] && ENV_LINES="$ENV_LINES
-Environment=OPENAI_API_KEY=$OPENAI_API_KEY"
-[[ -n "${DEEPGRAM_API_KEY:-}" ]] && ENV_LINES="$ENV_LINES
-Environment=DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY"
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]

@@ -42,6 +42,29 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 
+# ── Config ──
+
+_CONFIG_PATHS = [
+    Path(__file__).parent / "config.json",
+    Path("/var/lib/clack/config.json"),
+]
+
+def _load_config() -> dict:
+    """Load config from JSON file. Provider keys and optional settings live here."""
+    for p in _CONFIG_PATHS:
+        try:
+            return json.loads(p.read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            continue
+    return {}
+
+_config = _load_config()
+
+def _conf(key: str, default: str = "") -> str:
+    """Read a config value: config.json first, then env var fallback."""
+    return _config.get(key, "") or os.getenv(key, default)
+
+
 # ── Utilities ──
 
 def pcm_to_wav(pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, bits_per_sample: int = 16) -> bytes:
@@ -388,15 +411,15 @@ def _resample_24k_to_16k(data: bytes) -> bytes:
 # ── Provider factory ──
 
 _STT_FACTORIES = {
-    "elevenlabs": lambda: ElevenLabsSTT(k) if (k := os.getenv("ELEVENLABS_API_KEY", "")) else None,
-    "openai": lambda: OpenAISTT(k) if (k := os.getenv("OPENAI_API_KEY", "")) else None,
-    "deepgram": lambda: DeepgramSTT(k) if (k := os.getenv("DEEPGRAM_API_KEY", "")) else None,
+    "elevenlabs": lambda: ElevenLabsSTT(k) if (k := _conf("ELEVENLABS_API_KEY")) else None,
+    "openai": lambda: OpenAISTT(k) if (k := _conf("OPENAI_API_KEY")) else None,
+    "deepgram": lambda: DeepgramSTT(k) if (k := _conf("DEEPGRAM_API_KEY")) else None,
 }
 
 _TTS_FACTORIES = {
-    "elevenlabs": lambda v: ElevenLabsTTS(k, v or "bIHbv24MWmeRgasZH58o") if (k := os.getenv("ELEVENLABS_API_KEY", "")) else None,
-    "openai": lambda v: OpenAITTS(k, v or "alloy") if (k := os.getenv("OPENAI_API_KEY", "")) else None,
-    "deepgram": lambda v: DeepgramTTS(k, v or "aura-asteria-en") if (k := os.getenv("DEEPGRAM_API_KEY", "")) else None,
+    "elevenlabs": lambda v: ElevenLabsTTS(k, v or "bIHbv24MWmeRgasZH58o") if (k := _conf("ELEVENLABS_API_KEY")) else None,
+    "openai": lambda v: OpenAITTS(k, v or "alloy") if (k := _conf("OPENAI_API_KEY")) else None,
+    "deepgram": lambda v: DeepgramTTS(k, v or "aura-asteria-en") if (k := _conf("DEEPGRAM_API_KEY")) else None,
 }
 
 
@@ -702,16 +725,16 @@ class VoiceSession:
         if not voice:
             return fallback_provider
         if provider_name == "elevenlabs":
-            el_key = os.getenv("ELEVENLABS_API_KEY", "")
+            el_key = _conf("ELEVENLABS_API_KEY")
             resolved = VOICE_ALIASES.get(voice.lower(), voice)
             return ElevenLabsTTS(el_key, resolved)
         elif provider_name == "openai":
             # OpenAI voices: alloy, ash, coral, echo, fable, onyx, nova, sage, shimmer
-            oai_key = os.getenv("OPENAI_API_KEY", "")
+            oai_key = _conf("OPENAI_API_KEY")
             return OpenAITTS(oai_key, voice.lower())
         elif provider_name == "deepgram":
             # Deepgram voices: allow short name (e.g. "asteria") or full ID
-            dg_key = os.getenv("DEEPGRAM_API_KEY", "")
+            dg_key = _conf("DEEPGRAM_API_KEY")
             # Map short names to full IDs
             dg_aliases = {v["name"].lower(): v["id"] for v in DEEPGRAM_VOICES}
             resolved = dg_aliases.get(voice.lower(), voice)
