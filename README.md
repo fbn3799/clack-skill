@@ -10,7 +10,7 @@
 
 Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that sets up a WebSocket voice relay server. It bridges voice input through speech-to-text → your OpenClaw agent → text-to-speech, enabling natural voice conversations.
 
-📱 **[Apps available soon for iOS and Android!](https://clack-app.com)**
+📱 **[Available for iOS](https://clack-app.com)** — Android coming soon!
 
 ## Quickstart
 
@@ -59,7 +59,7 @@ The interactive setup will:
 
 > **No API keys?** No problem — on-device STT/TTS works without any speech provider keys.
 
-### 4. Connect securely
+### 2. Connect securely
 
 All connections are encrypted. The setup script will ask you to choose:
 
@@ -75,7 +75,7 @@ Install Tailscale on your server and phone. Use the server's Tailscale IP (e.g. 
 
 **Firewall port 9878** from the public internet — only allow localhost and Tailscale access.
 
-### 5. Open the app and connect
+### 3. Open the app and connect
 
 1. Open the Clack iOS app ([App Store](https://clack-app.com) or build from source)
 2. Go to Settings → Server
@@ -86,7 +86,7 @@ Install Tailscale on your server and phone. Use the server's Tailscale IP (e.g. 
 
 ## Configuration
 
-All configuration is via environment variables (set in your systemd service or `.env` file):
+Service configuration is via environment variables (set in the systemd service file). Provider API keys are stored separately in `config.json` (created by the setup script).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -96,14 +96,14 @@ All configuration is via environment variables (set in your systemd service or `
 | `STT_PROVIDER` | `elevenlabs` | `elevenlabs`, `openai`, or `deepgram` |
 | `TTS_PROVIDER` | `elevenlabs` | `elevenlabs`, `openai`, or `deepgram` |
 | `TTS_VOICE` | `Will` | Default voice (name or ID) |
-| `ELEVENLABS_API_KEY` | — | ElevenLabs API key |
-| `OPENAI_API_KEY` | — | OpenAI API key |
-| `DEEPGRAM_API_KEY` | — | Deepgram API key |
 | `VOICE_RELAY_PORT` | `9878` | Server port |
 | `CLACK_ECHO_MODE` | `false` | Enable echo test mode server-wide |
 | `CLACK_MAX_INPUT_CHARS` | `300` | Max transcript length |
 | `CLACK_HISTORY_DIR` | `/var/lib/clack/history` | History storage path |
 | `CLACK_MAX_HISTORY` | `50` | Max conversation history messages |
+| `CLACK_AGENT_NAME` | `Storm` | Agent name shown in the iOS app |
+
+Provider API keys (`ELEVENLABS_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`) are stored in `config.json` with restricted file permissions. The setup script manages these — re-run `clack setup` to add, update, or remove keys.
 
 > **Tip:** For local speech mode (on-device STT/TTS), you don't need any speech API keys — only the OpenClaw gateway connection.
 
@@ -115,6 +115,7 @@ All configuration is via environment variables (set in your systemd service or `
 - **Pairing is rate-limited**: 5 attempts per IP per 5 minutes, 2s delay on failure
 - **One-time codes**: 6-character alphanumeric, expire after 5 minutes, single-use
 - **Constant-time** token verification (HMAC) to prevent timing attacks
+- **Input sanitization**: User context is stripped to natural-language characters only, with IP addresses and domains removed. Sanitized text is returned to the client so users can see exactly what is stored.
 - **No telemetry**: Zero analytics, tracking, or data sent to developers
 - **Voice audio** goes to your server and only to the providers you choose
 - The iOS app stores only local settings (server address, token, preferences)
@@ -187,6 +188,8 @@ clack status     # Check service status
 clack restart    # Restart the server
 clack logs       # Tail logs
 clack pair       # Generate a new pairing code
+clack update     # Pull latest code and restart
+clack setup      # Re-run interactive setup
 clack uninstall  # Remove service and venv
 ```
 

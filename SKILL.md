@@ -36,17 +36,13 @@ WebSocket relay server that enables real-time voice conversations with an OpenCl
 
 ## Setup
 
-Run the setup script. It creates a venv, installs deps, configures a systemd service, and optionally sets up SSL.
+Run the setup script. It creates a venv, installs deps, prompts for API keys, configures a systemd service, and optionally sets up SSL.
 
 ```bash
-# Set required env vars first (or the script will prompt)
-export ELEVENLABS_API_KEY="sk_..."
-
-# Run setup
-bash scripts/setup.sh
+sudo bash scripts/setup.sh
 ```
 
-The script auto-detects your OpenClaw gateway config. It will ask for your ElevenLabs API key if not set.
+The script auto-detects your OpenClaw gateway config and interactively prompts for provider API keys (ElevenLabs, OpenAI, Deepgram — all optional). On re-runs, existing keys can be kept, updated, or deleted.
 
 ### Options
 
@@ -90,12 +86,13 @@ The gateway must have `chatCompletions` enabled. Apply this config patch:
 ## Management
 
 ```bash
-systemctl status clack
-systemctl restart clack
-journalctl -u clack -f
-
-# Add SSL later
-bash scripts/setup.sh --domain clack.yourdomain.com
+clack status     # Check service status
+clack restart    # Restart the server
+clack logs       # Tail logs
+clack pair       # Generate a new pairing code
+clack update     # Pull latest code and restart
+clack setup      # Re-run interactive setup (add SSL later, update keys, etc.)
+clack uninstall  # Remove service and venv
 ```
 
 ## Client App
@@ -151,7 +148,9 @@ Users can provide persistent context that gets injected into the system prompt f
 - **WebSocket message:** Send `{"type": "set_context", "text": "..."}` during a voice session
 - **HTTP API:** `PUT /context?token=...&text=...` or `POST /context` with JSON body `{"text": "..."}`
 
-Context is saved to disk and persists across calls and server restarts. Clear it via `DELETE /context` or by sending an empty `set_context` message.
+Context is sanitized before saving — only natural-language characters are kept (letters, numbers, common punctuation). IP addresses and domains are stripped. The server returns the sanitized text in the response so the app can show the user exactly what will be sent as context.
+
+Context persists across calls and server restarts. Clear it via `DELETE /context` or by sending an empty `set_context` message.
 
 ## Conversation History
 
@@ -225,11 +224,11 @@ When TTS is set to on-device, the server returns `response_text` only and skips 
 | `PUT /context` | PUT | Yes | Set user context (query param `text`) |
 | `POST /context` | POST | Yes | Set user context (JSON body `{"text": "..."}`) |
 | `DELETE /context` | DELETE | Yes | Clear user context |
-| `WebSocket /ws` | WS | Yes | Voice relay connection |
+| `WebSocket /voice` | WS | Yes | Voice relay connection |
 
 ## WebSocket Protocol
 
-**Endpoint:** `ws://<host>:<port>/ws?token=<RELAY_AUTH_TOKEN>`
+**Endpoint:** `ws://<host>:<port>/voice?token=<RELAY_AUTH_TOKEN>`
 
 ### Client → Server
 
@@ -241,6 +240,7 @@ When TTS is set to on-device, the server returns `response_text` only and skips 
 | `{"type":"end_speech"}` | JSON | Signal end of speech, triggers processing |
 | `{"type":"interrupt"}` | JSON | Cancel current TTS playback |
 | `{"type":"ping"}` | JSON | Keepalive |
+| `{"type":"set_context","text":"..."}` | JSON | Set user context (sanitized before saving) |
 | `{"type":"auth","token":"..."}` | JSON | Authenticate (alternative to query param) |
 
 ### Server → Client
@@ -256,6 +256,8 @@ When TTS is set to on-device, the server returns `response_text` only and skips 
 | Binary frames | bytes | TTS audio (PCM 16kHz, 16-bit, mono) |
 | `{"type":"response_end"}` | JSON | Audio stream done |
 | `{"type":"tts_cancelled"}` | JSON | TTS playback was interrupted |
+| `{"type":"context_updated","text":"..."}` | JSON | Context saved — `text` contains the sanitized version |
+| `{"type":"context_cleared"}` | JSON | Context was cleared |
 
 ## Features
 
@@ -299,13 +301,12 @@ Available aliases: will, aria, roger, sarah, laura, charlie, george, callum, riv
 | `OPENCLAW_GATEWAY_TOKEN` | — | Gateway bearer token |
 | `STT_PROVIDER` | `elevenlabs` | STT provider (`elevenlabs`, `openai`, `deepgram`) |
 | `TTS_PROVIDER` | `elevenlabs` | TTS provider (`elevenlabs`, `openai`, `deepgram`) |
-| `TTS_VOICE` | `bIHbv24MWmeRgasZH58o` | Default voice ID or alias |
-| `ELEVENLABS_API_KEY` | — | ElevenLabs API key |
-| `OPENAI_API_KEY` | — | OpenAI API key |
-| `DEEPGRAM_API_KEY` | — | Deepgram API key |
+| `TTS_VOICE` | `Will` | Default voice (name or ID) |
 | `VOICE_RELAY_PORT` | `9878` | Server port |
 | `CLACK_ECHO_MODE` | `false` | Enable echo test mode server-wide |
 | `CLACK_MAX_INPUT_CHARS` | `300` | Max transcript length (chars) |
 | `CLACK_HISTORY_DIR` | `/var/lib/clack/history` | History file storage directory |
 | `CLACK_MAX_HISTORY` | `50` | Max conversation history messages |
 | `CLACK_AGENT_NAME` | `Storm` | Agent name shown in the iOS app |
+
+Provider API keys (`ELEVENLABS_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`) are stored in `config.json` with restricted file permissions, not as environment variables. The setup script manages these interactively.

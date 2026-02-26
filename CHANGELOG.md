@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.3 (2026-02-26)
+
+### Security
+- **Tailscale APT install**: Replaced `curl | sh` with official APT repository for Tailscale installation
+- **Context sanitization**: User context is stripped to natural-language characters only (letters, numbers, common punctuation). IP addresses and domains are removed. Capped at 1000 characters.
+- **Provider keys in config.json**: API keys stored in `config.json` (chmod 600) instead of systemd environment variables
+
+### Features
+- **Sanitized context returned to client**: All context endpoints (PUT, POST, WebSocket) return the sanitized text so the app can show users exactly what is stored
+- **Setup re-run preserves keys**: Re-running setup prompts to keep, update, or delete existing API keys
+- **Provider auto-fallback**: If preferred STT/TTS provider has no API key, automatically falls back to first available provider
+- **`clack update` command**: Pull latest code and restart with a single command
+
+### Docs
+- Fixed WebSocket endpoint path (`/ws` → `/voice`)
+- Fixed step numbering in README quickstart
+- Added `set_context`, `context_updated`, `context_cleared` to WebSocket protocol docs
+- Updated configuration docs to reflect `config.json` for provider keys
+- Added input sanitization details to Security sections
+
+---
+
 ## 1.3.0 (2026-02-21)
 
 ### Security
