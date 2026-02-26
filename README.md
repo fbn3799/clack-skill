@@ -42,10 +42,11 @@ Your agent will clone the repo, run the setup script, and configure everything. 
 ### 1. Install & set up
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fbn3799/clack-skill/master/scripts/install.sh | sudo bash
+git clone https://github.com/fbn3799/clack-skill.git ~/.openclaw/skills/clack
+sudo bash ~/.openclaw/skills/clack/scripts/setup.sh
 ```
 
-This single command clones the repo, installs dependencies, and runs the interactive setup.
+This clones the repo and runs the interactive setup.
 
 The interactive setup will:
 - Install system dependencies (Python, venv)
