@@ -748,14 +748,14 @@ class VoiceSession:
         Only allows natural language characters that could reasonably
         appear in spoken or dictated text:
         - Letters (any script), numbers, whitespace
-        - Common punctuation: . , ! ? ; : ' " - ( ) / @ # & + = %
+        - Common punctuation: . , ! ? ; : ' " - ( ) @ # & + = %
         - Newlines and tabs (for lists and structure)
         - Currency symbols, accented characters, emoji
-        Strips everything else (control chars, escape sequences, etc.).
+        Strips everything else (control chars, escape sequences, slashes, etc.).
         """
         import re as _re
-        # Keep: word chars (any script), digits, whitespace, common punctuation
-        text = _re.sub(r'[^\w\s.,!?;:\'\"()\-–—/\\@#&+=*%€$£¥°…\[\]{}~`^|<>]', '', text, flags=_re.UNICODE)
+        # Keep: word chars (any script), digits, whitespace, common punctuation (no slashes)
+        text = _re.sub(r'[^\w\s.,!?;:\'\"()\-–—@#&+=*%€$£¥°…]', '', text, flags=_re.UNICODE)
         # Collapse excessive whitespace
         text = _re.sub(r'\n{4,}', '\n\n\n', text)
         text = _re.sub(r' {4,}', '   ', text)
