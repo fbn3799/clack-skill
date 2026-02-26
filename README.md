@@ -5,7 +5,7 @@
 </p>
 
 [![ClawHub - Rated Benign](https://img.shields.io/badge/ClawHub-Rated%20Benign-brightgreen)](https://clawhub.ai/fbn3799/clack)
-[![VirusTotal - Clean](https://img.shields.io/badge/VirusTotal-Clean-brightgreen)](https://www.virustotal.com)
+[![VirusTotal - Clean](https://img.shields.io/badge/VirusTotal-Clean-brightgreen)](https://clawhub.ai/fbn3799/clack)
 
 > Talk to your AI assistant by voice. Real-time, self-hosted, private.
 
