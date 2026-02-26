@@ -14,6 +14,7 @@ usage() {
   echo "Usage: clack <command>"
   echo ""
   echo "Commands:"
+  echo "  update      Pull latest code and restart"
   echo "  setup       Run interactive setup"
   echo "  uninstall   Remove Clack service and venv"
   echo "  pair        Generate a new pairing code"
@@ -24,6 +25,10 @@ usage() {
 }
 
 case "${1:-}" in
+  update)
+    echo "Updating Clack..."
+    git -C "$SKILL_DIR" pull --ff-only && systemctl restart clack && echo "✓ Updated and restarted"
+    ;;
   setup)
     bash "$SKILL_DIR/scripts/setup.sh" "${@:2}"
     ;;
