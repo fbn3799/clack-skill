@@ -653,6 +653,32 @@ def _redeem_pairing_code(code: str) -> bool:
 CONTEXT_FILE = HISTORY_DIR / "context.json"
 
 
+def sanitize_context(text: str) -> str:
+    """Sanitize user-provided context for voice-first input.
+
+    Only allows natural language characters that could reasonably
+    appear in spoken or dictated text:
+    - Letters (any script), numbers, whitespace
+    - Common punctuation: . , ! ? ; : ' " - ( ) @ # & + = %
+    - Newlines and tabs (for lists and structure)
+    - Currency symbols, accented characters, emoji
+    Strips everything else (control chars, escape sequences, slashes,
+    IP addresses, domains, URLs, etc.).
+    """
+    import re as _re
+    # Keep: word chars (any script), digits, whitespace, common punctuation (no slashes)
+    text = _re.sub(r'[^\w\s.,!?;:\'\"()\-–—@#&+=*%€$£¥°…]', '', text, flags=_re.UNICODE)
+    # Strip IP addresses (with optional port)
+    text = _re.sub(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b', '', text)
+    # Strip domains (e.g. example.com, sub.example.co.uk)
+    text = _re.sub(r'\b[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}(\.[a-zA-Z]{2,})*(:\d+)?\b', '', text)
+    # Collapse excessive whitespace
+    text = _re.sub(r'\n{4,}', '\n\n\n', text)
+    text = _re.sub(r' {4,}', '   ', text)
+    # Truncate
+    return text.strip()[:1000]
+
+
 def load_context() -> dict:
     """Load saved context. Returns dict with 'text' and optional metadata."""
     if CONTEXT_FILE.exists():
@@ -741,38 +767,12 @@ class VoiceSession:
             return DeepgramTTS(dg_key, resolved)
         return fallback_provider
 
-    @staticmethod
-    def _sanitize_context(text: str) -> str:
-        """Sanitize user-provided context for voice-first input.
-
-        Only allows natural language characters that could reasonably
-        appear in spoken or dictated text:
-        - Letters (any script), numbers, whitespace
-        - Common punctuation: . , ! ? ; : ' " - ( ) @ # & + = %
-        - Newlines and tabs (for lists and structure)
-        - Currency symbols, accented characters, emoji
-        Strips everything else (control chars, escape sequences, slashes,
-        IP addresses, domains, URLs, etc.).
-        """
-        import re as _re
-        # Keep: word chars (any script), digits, whitespace, common punctuation (no slashes)
-        text = _re.sub(r'[^\w\s.,!?;:\'\"()\-–—@#&+=*%€$£¥°…]', '', text, flags=_re.UNICODE)
-        # Strip IP addresses (with optional port)
-        text = _re.sub(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b', '', text)
-        # Strip domains (e.g. example.com, sub.example.co.uk)
-        text = _re.sub(r'\b[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}(\.[a-zA-Z]{2,})*(:\d+)?\b', '', text)
-        # Collapse excessive whitespace
-        text = _re.sub(r'\n{4,}', '\n\n\n', text)
-        text = _re.sub(r' {4,}', '   ', text)
-        # Truncate
-        return text.strip()[:1000]
-
     def _build_system_prompt(self, config: dict) -> str:
         """Build system prompt with optional user context injected."""
         base = config.get("systemPrompt", DEFAULT_SYSTEM_PROMPT)
         ctx = self.user_context
         if ctx.get("text"):
-            sanitized = self._sanitize_context(ctx['text'])
+            sanitized = sanitize_context(ctx['text'])
             base += (
                 "\n\n--- BEGIN USER CONTEXT ---\n"
                 f"{sanitized}\n"
@@ -780,12 +780,14 @@ class VoiceSession:
             )
         return base
 
-    def update_context(self, text: str):
-        """Update the user context and rebuild system prompt."""
-        self.user_context = {"text": text, "updated": time.time()}
+    def update_context(self, text: str) -> str:
+        """Update the user context and rebuild system prompt. Returns sanitized text."""
+        sanitized = sanitize_context(text)
+        self.user_context = {"text": sanitized, "updated": time.time()}
         save_context(self.user_context)
         self.system_prompt = self._build_system_prompt(self.config)
-        print(f"[Context] Updated: {text[:100]}")
+        print(f"[Context] Updated: {sanitized[:100]}")
+        return sanitized
 
     async def send_json(self, data: dict):
         await self.websocket.send_text(json.dumps(data))
@@ -1054,7 +1056,8 @@ async def set_context_put(request: Request, token: str = Query(default=""), text
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     if not text:
         return JSONResponse({"error": "text required"}, status_code=400)
-    ctx = {"text": text[:1000], "updated": time.time()}
+    sanitized = sanitize_context(text)
+    ctx = {"text": sanitized, "updated": time.time()}
     save_context(ctx)
     return {"ok": True, "context": ctx}
 
@@ -1072,7 +1075,8 @@ async def set_context_post(request: Request, token: str = Query(default="")):
         return JSONResponse({"error": "invalid JSON"}, status_code=400)
     if not text:
         return JSONResponse({"error": "text required"}, status_code=400)
-    ctx = {"text": text[:1000], "updated": time.time()}
+    sanitized = sanitize_context(text)
+    ctx = {"text": sanitized, "updated": time.time()}
     save_context(ctx)
     return {"ok": True, "context": ctx}
 
@@ -1126,8 +1130,8 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                 elif msg_type == "set_context" and session:
                     ctx_text = data.get("text", "")
                     if ctx_text:
-                        session.update_context(ctx_text)
-                        await session.send_json({"type": "context_updated", "text": ctx_text})
+                        sanitized = session.update_context(ctx_text)
+                        await session.send_json({"type": "context_updated", "text": sanitized})
                     else:
                         # Clear context
                         session.user_context = {}
