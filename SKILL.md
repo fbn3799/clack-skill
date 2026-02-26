@@ -1,7 +1,28 @@
 ---
 name: clack
-version: 1.3.0
+version: 1.4.0
 description: Deploy and manage Clack, a voice relay server for OpenClaw. Bridges voice input (WebSocket) through STT → OpenClaw agent → TTS, enabling real-time voice conversations with your agent. Supports ElevenLabs, OpenAI, and Deepgram for STT/TTS. Per-session provider selection — users can independently choose STT and TTS providers (including on-device) from the app settings. Encrypted connections via Domain (SSL) or Tailscale. Supports local speech mode where STT/TTS run on-device and only LLM calls go through the server. Use when a user wants to set up voice chat, voice relay, voice interface, Clack, or talk to their agent by voice.
+metadata:
+  openclaw:
+    requires:
+      env:
+        - OPENCLAW_GATEWAY_TOKEN
+        - RELAY_AUTH_TOKEN
+        - ELEVENLABS_API_KEY
+        - OPENAI_API_KEY
+        - DEEPGRAM_API_KEY
+      bins:
+        - python3
+        - systemctl
+      anyBins:
+        - caddy
+        - nginx
+        - tailscale
+    primaryEnv: OPENCLAW_GATEWAY_TOKEN
+    os:
+      - linux
+    emoji: "🎙️"
+    homepage: https://github.com/fbn3799/clack-skill
 ---
 
 # Clack

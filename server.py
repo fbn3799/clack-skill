@@ -67,28 +67,21 @@ def pcm_to_wav(pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, bit
 
 
 def _get_agent_name() -> str:
-    """Read agent name from IDENTITY.md or env, with fallback."""
+    """Read agent name from env or current user's IDENTITY.md."""
     env_name = os.getenv("CLACK_AGENT_NAME", "")
     if env_name:
         return env_name
-    # Try common IDENTITY.md locations
-    candidates = [Path.home() / ".openclaw" / "workspace" / "IDENTITY.md"]
+    # Only check the current user's home directory
+    path = Path.home() / ".openclaw" / "workspace" / "IDENTITY.md"
     try:
-        for p in Path("/home").iterdir():
-            candidates.append(p / ".openclaw" / "workspace" / "IDENTITY.md")
+        text = path.read_text()
+        for line in text.splitlines():
+            if line.startswith("- **Name:**"):
+                name = line.split("**Name:**")[-1].strip()
+                if name:
+                    return name
     except (FileNotFoundError, PermissionError):
         pass
-    candidates.append(Path("/root/.openclaw/workspace/IDENTITY.md"))
-    for path in candidates:
-        try:
-            text = path.read_text()
-            for line in text.splitlines():
-                if line.startswith("- **Name:**"):
-                    name = line.split("**Name:**")[-1].strip()
-                    if name:
-                        return name
-        except (FileNotFoundError, PermissionError):
-            continue
     return ""
 
 

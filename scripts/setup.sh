@@ -72,8 +72,12 @@ c=json.load(open('$OPENCLAW_CONFIG'))
 print(c.get('gateway',{}).get('http',{}).get('endpoints',{}).get('chatCompletions',{}).get('enabled',False))
 " 2>/dev/null)
   if [[ "$_CC_ENABLED" != "True" ]]; then
-    echo "  Enabling /v1/chat/completions endpoint..."
-    python3 -c "
+    echo ""
+    echo "  Clack requires the /v1/chat/completions gateway endpoint."
+    echo "  This will modify: $OPENCLAW_CONFIG"
+    read -rp "  Enable it now? (Y/n): " _CC_CONFIRM
+    if [[ "$_CC_CONFIRM" != "n" && "$_CC_CONFIRM" != "N" ]]; then
+      python3 -c "
 import json
 p='$OPENCLAW_CONFIG'
 c=json.load(open(p))
@@ -81,11 +85,15 @@ c.setdefault('gateway',{}).setdefault('http',{}).setdefault('endpoints',{}).setd
 json.dump(c,open(p,'w'),indent=2)
 print('  ✓ Chat completions enabled in', p)
 "
-    # Restart gateway to apply
-    if command -v openclaw &>/dev/null; then
-      openclaw gateway restart &>/dev/null && echo "  ✓ Gateway restarted" || echo "  ⚠ Could not restart gateway — restart manually: openclaw gateway restart"
+      # Restart gateway to apply
+      if command -v openclaw &>/dev/null; then
+        openclaw gateway restart &>/dev/null && echo "  ✓ Gateway restarted" || echo "  ⚠ Could not restart gateway — restart manually: openclaw gateway restart"
+      else
+        echo "  ⚠ Restart your OpenClaw gateway to apply: openclaw gateway restart"
+      fi
     else
-      echo "  ⚠ Restart your OpenClaw gateway to apply: openclaw gateway restart"
+      echo "  Skipped. Enable it manually before using Clack:"
+      echo "    openclaw gateway config set http.endpoints.chatCompletions.enabled true"
     fi
   else
     echo "  ✓ Chat completions endpoint already enabled"
