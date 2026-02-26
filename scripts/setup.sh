@@ -223,11 +223,15 @@ if [[ -z "$DOMAIN" ]]; then
   fi
 
   if [[ "$_CONN_CHOICE" == "2" ]]; then
-    # Install Tailscale if not present
+    # Install Tailscale via official APT repo if not present
     if ! command -v tailscale &>/dev/null; then
       echo ""
-      echo "Installing Tailscale..."
-      curl -fsSL https://tailscale.com/install.sh | sh
+      echo "Installing Tailscale via APT..."
+      curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+      curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list >/dev/null
+      apt-get update -qq
+      apt-get install -y -qq tailscale > /dev/null 2>&1
+      echo "  ✓ Tailscale installed"
     fi
     if ! tailscale status &>/dev/null 2>&1; then
       echo ""
