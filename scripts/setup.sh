@@ -189,7 +189,7 @@ echo "  ✓ Python dependencies installed"
 # ── CLI command ──
 
 if [[ -d /usr/local/bin ]]; then
-  ln -sf "$SKILL_DIR/scripts/clack" /usr/local/bin/clack
+  ln -sf "$SKILL_DIR/scripts/clack.sh" /usr/local/bin/clack
   echo "  ✓ 'clack' command installed (clack setup / clack pair / clack logs)"
 fi
 

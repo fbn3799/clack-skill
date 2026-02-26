@@ -142,6 +142,18 @@ Each voice call creates a **`clack:<uuid>`** session in OpenClaw. These are smal
 ### Session Picker
 The session picker in the iOS app provides **context injection only**. When you select a session key, it is added as text context to the LLM prompt — it does not change routing. All voice calls still create their own `clack:<uuid>` session.
 
+## User Context
+
+Users can provide persistent context that gets injected into the system prompt for every voice call. This lets the AI know about the user's preferences, notes, or any background information.
+
+### How to set context
+- **App text field:** In the Clack app under Settings → Context, enter free-form text
+- **Session picker:** Select an OpenClaw session to inject its content as context
+- **WebSocket message:** Send `{"type": "set_context", "text": "..."}` during a voice session
+- **HTTP API:** `PUT /context?token=...&text=...` or `POST /context` with JSON body `{"text": "..."}`
+
+Context is saved to disk and persists across calls and server restarts. Clear it via `DELETE /context` or by sending an empty `set_context` message.
+
 ## Conversation History
 
 The relay maintains a **shared history file** across calls for continuity. History is stored as JSON in `CLACK_HISTORY_DIR` (default: `/var/lib/clack/history`).
@@ -210,6 +222,10 @@ When TTS is set to on-device, the server returns `response_text` only and skips 
 | `GET /sessions` | GET | Yes | List active sessions |
 | `GET /history` | GET | Yes | Get conversation history |
 | `DELETE /history` | DELETE | Yes | Clear conversation history |
+| `GET /context` | GET | Yes | Get current user context |
+| `PUT /context` | PUT | Yes | Set user context (query param `text`) |
+| `POST /context` | POST | Yes | Set user context (JSON body `{"text": "..."}`) |
+| `DELETE /context` | DELETE | Yes | Clear user context |
 | `WebSocket /ws` | WS | Yes | Voice relay connection |
 
 ## WebSocket Protocol
