@@ -536,6 +536,25 @@ MAX_WORDS_PER_MESSAGE = int(os.getenv("CLACK_MAX_WORDS_PER_MESSAGE", "60"))
 # Greeting follow-up delay in seconds
 GREETING_FOLLOWUP_DELAY = int(os.getenv("CLACK_GREETING_FOLLOWUP_DELAY", "10"))
 
+def _strip_fake_turns(text: str) -> str:
+    """Strip simulated user/assistant turn labels from LLM output.
+    Catches patterns like 'User: ...' or 'Assistant:' that the model
+    sometimes generates when it role-plays both sides of a conversation."""
+    import re as _re
+    # Truncate at the first occurrence of a role label on its own line or
+    # preceded by whitespace, keeping only the assistant's own words.
+    cleaned = _re.split(
+        r'\n\s*(?:User|Human|Assistant|Assistent|Nutzer|Benutzer)\s*:',
+        text, maxsplit=1, flags=_re.IGNORECASE
+    )[0]
+    # Also catch inline "User:" mid-sentence (no newline)
+    cleaned = _re.split(
+        r'(?:User|Human|Nutzer|Benutzer)\s*:',
+        cleaned, maxsplit=1, flags=_re.IGNORECASE
+    )[0]
+    return cleaned.strip()
+
+
 DEFAULT_SYSTEM_PROMPT = (
     "You are a voice assistant. The user is talking to you via voice. "
     "RESPONSE RULES — these are MANDATORY:\n"
@@ -548,6 +567,9 @@ DEFAULT_SYSTEM_PROMPT = (
     "- If the user asks something complex, give a short summary and offer to elaborate.\n"
     "- Respond naturally and directly. No filler phrases.\n"
     "- Do not include or reference any metadata, labels, or formatting artifacts.\n"
+    "- NEVER simulate the user's reply. Do not write 'User:', 'Human:', or any role label. "
+    "When you ask a question, STOP immediately and wait for the real user to respond. "
+    "Your output must contain ONLY your own words — never generate text on behalf of the user.\n"
     "- Always respond in the same language the user speaks to you.\n"
     "SAFETY: This is a voice session — transcription errors and hallucinations are common. "
     "NEVER execute destructive actions (delete files, send emails/messages, modify system settings, "
@@ -979,7 +1001,7 @@ class VoiceSession:
         ]
         async with aiohttp.ClientSession() as session:
             headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
-            payload = {"model": "openclaw", "messages": messages, "max_tokens": MAX_RESPONSE_TOKENS}
+            payload = {"model": "openclaw", "messages": messages, "max_tokens": MAX_RESPONSE_TOKENS, "stop": ["User:", "Human:", "user:", "human:", "Assistant:", "assistant:"]}
             try:
                 async with session.post(
                     f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
@@ -992,8 +1014,8 @@ class VoiceSession:
                         greeting = "Hey!"
             except Exception:
                 greeting = "Hey!"
-        # Clean any ||| delimiters from greeting (should be single part)
-        greeting = greeting.replace("|||", " ").strip()
+        # Clean any ||| delimiters and strip fake turn labels from greeting
+        greeting = _strip_fake_turns(greeting.replace("|||", " ").strip())
         self._greeting_history_len = len(self.conversation_history)
         self.conversation_history.append({"role": "assistant", "content": greeting})
         self.last_assistant_response = greeting
@@ -1048,7 +1070,7 @@ class VoiceSession:
         async def _llm_call():
             async with aiohttp.ClientSession() as session:
                 headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
-                payload = {"model": "openclaw", "messages": messages, "max_tokens": MAX_RESPONSE_TOKENS}
+                payload = {"model": "openclaw", "messages": messages, "max_tokens": MAX_RESPONSE_TOKENS, "stop": ["User:", "Human:", "user:", "human:", "Assistant:", "assistant:"]}
                 async with session.post(
                     f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
                     headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
@@ -1072,6 +1094,8 @@ class VoiceSession:
                     except Exception:
                         pass
             content = llm_task.result()
+            if content:
+                content = _strip_fake_turns(content)
             if content:
                 self.conversation_history.append({"role": "assistant", "content": content})
                 save_history(self.conversation_history)
