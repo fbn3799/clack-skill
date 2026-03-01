@@ -992,7 +992,7 @@ class VoiceSession:
         messages = [
             {"role": "system", "content": self.system_prompt},
             *self.conversation_history,
-            {"role": "user", "content": "[Voice session started. Greet the user briefly.]"},
+            {"role": "user", "content": f"[Voice session started. Greet the user briefly.{f' Debug: running on branch {GIT_BRANCH}.' if GIT_BRANCH and GIT_BRANCH not in ('master', 'main') else ''}]"},
         ]
         async with aiohttp.ClientSession() as session:
             headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
