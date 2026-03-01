@@ -788,6 +788,7 @@ class VoiceSession:
         self.interrupted = False
         self.greeting_enabled = config.get("greetingEnabled", True)
         self._greeting_followup_task = None
+        self._greeting_history_len = 0
 
         # STT provider selection
         stt_choice = config.get("sttProvider", "").lower() if config.get("sttProvider") else ""
@@ -904,7 +905,7 @@ class VoiceSession:
                     await self.tts.synthesize_stream(text[:500], self.send_audio)
                 except ProviderError as e:
                     await self.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
-        await self.send_json({"type": "response_end"})
+            await self.send_json({"type": "response_end"})
 
     async def _greeting_followups(self):
         """Send greeting follow-up parts after delays if the user hasn't spoken."""
@@ -914,7 +915,7 @@ class VoiceSession:
             if self.processing or self.interrupted:
                 return
             # Check if user has spoken (history grew beyond greeting)
-            if len(self.conversation_history) > 1:
+            if len(self.conversation_history) > self._greeting_history_len + 1:
                 return
             followup = "Is there something you'd like to discuss with me?"
             print(f"[Greeting] Follow-up 1: {followup}")
@@ -927,13 +928,8 @@ class VoiceSession:
             await asyncio.sleep(GREETING_FOLLOWUP_DELAY)
             if self.processing or self.interrupted:
                 return
-            # Check if user has spoken since follow-up 1
-            last_user = None
-            for msg in reversed(self.conversation_history):
-                if msg["role"] == "user":
-                    last_user = msg
-                    break
-            if last_user:
+            # Check if user has spoken since greeting (history grew beyond greeting + followup1)
+            if len(self.conversation_history) > self._greeting_history_len + 2:
                 return
             followup2 = "I'm here if you need me."
             print(f"[Greeting] Follow-up 2: {followup2}")
@@ -978,6 +974,7 @@ class VoiceSession:
                 greeting = "Hey!"
         # Clean any ||| delimiters from greeting (should be single part)
         greeting = greeting.replace("|||", " ").strip()
+        self._greeting_history_len = len(self.conversation_history)
         self.conversation_history.append({"role": "assistant", "content": greeting})
         self.last_assistant_response = greeting
         print(f"[Greeting] {greeting} (localTTS={self.local_tts})")
