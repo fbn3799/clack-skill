@@ -513,21 +513,33 @@ VOICE_METADATA = [
 ]
 MAX_INPUT_CHARS = int(os.getenv("CLACK_MAX_INPUT_CHARS", "300"))
 
+# ── Multi-message & word limits ──
+# max_tokens increased ~30% from 150 to 200 to allow longer responses
+MAX_RESPONSE_TOKENS = int(os.getenv("CLACK_MAX_RESPONSE_TOKENS", "200"))
+# Word limit per individual message part (agent will split longer responses)
+MAX_WORDS_PER_MESSAGE = int(os.getenv("CLACK_MAX_WORDS_PER_MESSAGE", "60"))
+# Greeting follow-up delay in seconds
+GREETING_FOLLOWUP_DELAY = int(os.getenv("CLACK_GREETING_FOLLOWUP_DELAY", "10"))
+
 DEFAULT_SYSTEM_PROMPT = (
     "You are a voice assistant. The user is talking to you via voice. "
     "RESPONSE RULES — these are MANDATORY:\n"
-    "- Keep responses to 1-3 sentences MAX. This is spoken conversation, not text.\n"
+    "- Keep each response under {max_words} words. This is spoken conversation, not text.\n"
+    "- If your answer requires more than {max_words} words, split it into multiple parts "
+    "separated by the delimiter |||. Each part must be under {max_words} words. "
+    "The listener will hear each part one at a time and can interrupt.\n"
     "- NEVER use bullet points, numbered lists, markdown, or headers.\n"
     "- NEVER give long explanations. Be brief like a real person talking.\n"
     "- If the user asks something complex, give a short summary and offer to elaborate.\n"
     "- Respond naturally and directly. No filler phrases.\n"
     "- Do not include or reference any metadata, labels, or formatting artifacts.\n"
+    "- Always respond in the same language the user speaks to you.\n"
     "SAFETY: This is a voice session — transcription errors and hallucinations are common. "
     "NEVER execute destructive actions (delete files, send emails/messages, modify system settings, "
     "run shell commands, make purchases, or change configurations) based on voice input alone. "
     "For any action that modifies data or has external effects, describe what you WOULD do and ask for explicit confirmation. "
     "Read-only actions (search, weather, info lookups) are fine without confirmation."
-)
+).format(max_words=MAX_WORDS_PER_MESSAGE)
 
 stt_provider, STT_NAME = create_stt_provider()
 tts_provider, TTS_NAME = create_tts_provider()
@@ -679,6 +691,68 @@ def sanitize_context(text: str) -> str:
     return text.strip()[:1000]
 
 
+LANGUAGE_FILE = HISTORY_DIR / "language.json"
+
+
+def load_language() -> str:
+    """Load last spoken language. Returns language string or empty."""
+    if LANGUAGE_FILE.exists():
+        try:
+            data = json.loads(LANGUAGE_FILE.read_text())
+            lang = data.get("language", "")
+            if lang:
+                print(f"[Language] Loaded: {lang}")
+            return lang
+        except Exception as e:
+            print(f"[Language] Error loading: {e}")
+    return ""
+
+
+def save_language(language: str):
+    """Persist the last detected language."""
+    try:
+        LANGUAGE_FILE.write_text(json.dumps({"language": language, "updated": time.time()}))
+        print(f"[Language] Saved: {language}")
+    except Exception as e:
+        print(f"[Language] Error saving: {e}")
+
+
+def detect_language(text: str) -> str:
+    """Simple language detection based on character scripts and common words."""
+    import re as _re
+    text_lower = text.lower()
+    # German indicators
+    if _re.search(r'\b(ich|und|der|die|das|ist|ein|nicht|mit|auch|auf|für|sich|den|von|zu|haben|werden|sein|wird|kann|nach|bei|noch|wie|über|wenn|oder|aber|mehr|schon|sehr)\b', text_lower):
+        return "German"
+    # French indicators
+    if _re.search(r'\b(je|le|la|les|un|une|de|du|des|est|et|en|que|qui|ne|pas|pour|avec|sur|dans|ce|sont|nous|vous|ils|elle|mais|plus|tout|bien|fait)\b', text_lower):
+        return "French"
+    # Spanish indicators
+    if _re.search(r'\b(el|la|los|las|un|una|de|del|en|que|es|por|con|para|como|pero|más|este|esta|todo|muy|también|puede|hay|fue|ser|está|tiene|son|han)\b', text_lower):
+        return "Spanish"
+    # Italian indicators
+    if _re.search(r'\b(il|lo|la|le|un|una|di|del|che|è|in|per|con|non|sono|come|più|questo|anche|ma|ci|ha|se|da|al|tutto|stato|essere|fatto|molto)\b', text_lower):
+        return "Italian"
+    # Portuguese indicators
+    if _re.search(r'\b(o|a|os|as|um|uma|de|do|da|em|que|é|no|na|por|com|para|como|mas|mais|este|também|pode|tem|foi|ser|está|são|muito|isso)\b', text_lower):
+        return "Portuguese"
+    # Check for non-Latin scripts
+    if _re.search(r'[\u0400-\u04FF]', text):
+        return "Russian"
+    if _re.search(r'[\u4e00-\u9fff]', text):
+        return "Chinese"
+    if _re.search(r'[\u3040-\u309f\u30a0-\u30ff]', text):
+        return "Japanese"
+    if _re.search(r'[\uac00-\ud7af]', text):
+        return "Korean"
+    if _re.search(r'[\u0600-\u06FF]', text):
+        return "Arabic"
+    # Default: if clearly English words present
+    if _re.search(r'\b(the|is|are|was|were|have|has|had|will|would|could|should|can|do|does|did|this|that|with|from|they|them|been|being|what|when|where|which|who|how|not|but|and|for)\b', text_lower):
+        return "English"
+    return ""
+
+
 def load_context() -> dict:
     """Load saved context. Returns dict with 'text' and optional metadata."""
     if CONTEXT_FILE.exists():
@@ -705,6 +779,7 @@ class VoiceSession:
         self.websocket = websocket
         self.config = config
         self.user_context = load_context()
+        self.last_language = load_language()
         self.system_prompt = self._build_system_prompt(config)
         self.conversation_history = load_history()
         self.audio_buffer = bytearray()
@@ -712,6 +787,7 @@ class VoiceSession:
         self.processing = False
         self.interrupted = False
         self.greeting_enabled = config.get("greetingEnabled", True)
+        self._greeting_followup_task = None
 
         # STT provider selection
         stt_choice = config.get("sttProvider", "").lower() if config.get("sttProvider") else ""
@@ -768,8 +844,10 @@ class VoiceSession:
         return fallback_provider
 
     def _build_system_prompt(self, config: dict) -> str:
-        """Build system prompt with optional user context injected."""
+        """Build system prompt with optional user context and language preference injected."""
         base = config.get("systemPrompt", DEFAULT_SYSTEM_PROMPT)
+        if self.last_language:
+            base += f"\n\nThe user's preferred language is {self.last_language}. Respond in {self.last_language} unless they switch languages."
         ctx = self.user_context
         if ctx.get("text"):
             sanitized = sanitize_context(ctx['text'])
@@ -816,6 +894,64 @@ class VoiceSession:
             return combined if combined.strip() else None
         return await self.stt.transcribe(audio_data)
 
+    async def _send_message_with_tts(self, text: str):
+        """Send a text message with optional TTS audio."""
+        await self.send_json({"type": "response_text", "text": text})
+        if not self.local_tts:
+            await self.send_json({"type": "response_start", "format": "pcm_16000"})
+            if self.tts:
+                try:
+                    await self.tts.synthesize_stream(text[:500], self.send_audio)
+                except ProviderError as e:
+                    await self.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
+        await self.send_json({"type": "response_end"})
+
+    async def _greeting_followups(self):
+        """Send greeting follow-up parts after delays if the user hasn't spoken."""
+        try:
+            # Wait for first follow-up
+            await asyncio.sleep(GREETING_FOLLOWUP_DELAY)
+            if self.processing or self.interrupted:
+                return
+            # Check if user has spoken (history grew beyond greeting)
+            if len(self.conversation_history) > 1:
+                return
+            followup = "Is there something you'd like to discuss with me?"
+            print(f"[Greeting] Follow-up 1: {followup}")
+            self.conversation_history.append({"role": "assistant", "content": followup})
+            self.last_assistant_response = followup
+            save_history(self.conversation_history)
+            await self._send_message_with_tts(followup)
+
+            # Wait for second follow-up
+            await asyncio.sleep(GREETING_FOLLOWUP_DELAY)
+            if self.processing or self.interrupted:
+                return
+            # Check if user has spoken since follow-up 1
+            last_user = None
+            for msg in reversed(self.conversation_history):
+                if msg["role"] == "user":
+                    last_user = msg
+                    break
+            if last_user:
+                return
+            followup2 = "I'm here if you need me."
+            print(f"[Greeting] Follow-up 2: {followup2}")
+            self.conversation_history.append({"role": "assistant", "content": followup2})
+            self.last_assistant_response = followup2
+            save_history(self.conversation_history)
+            await self._send_message_with_tts(followup2)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[Greeting] Follow-up error: {e}")
+
+    def cancel_greeting_followups(self):
+        """Cancel pending greeting follow-ups (user has spoken)."""
+        if self._greeting_followup_task and not self._greeting_followup_task.done():
+            self._greeting_followup_task.cancel()
+            self._greeting_followup_task = None
+
     async def greet(self):
         if not self.greeting_enabled:
             print("[Greeting] Disabled by client")
@@ -827,7 +963,7 @@ class VoiceSession:
         ]
         async with aiohttp.ClientSession() as session:
             headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
-            payload = {"model": "openclaw", "messages": messages, "max_tokens": 150}
+            payload = {"model": "openclaw", "messages": messages, "max_tokens": MAX_RESPONSE_TOKENS}
             try:
                 async with session.post(
                     f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
@@ -840,20 +976,53 @@ class VoiceSession:
                         greeting = "Hey!"
             except Exception:
                 greeting = "Hey!"
+        # Clean any ||| delimiters from greeting (should be single part)
+        greeting = greeting.replace("|||", " ").strip()
         self.conversation_history.append({"role": "assistant", "content": greeting})
         self.last_assistant_response = greeting
         print(f"[Greeting] {greeting} (localTTS={self.local_tts})")
-        await self.send_json({"type": "response_text", "text": greeting})
-        if not self.local_tts:
-            await self.send_json({"type": "response_start", "format": "pcm_16000"})
-            if self.tts:
-                try:
-                    await self.tts.synthesize_stream(greeting[:500], self.send_audio)
-                except ProviderError as e:
-                    await self.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
-        await self.send_json({"type": "response_end"})
+        await self._send_message_with_tts(greeting)
+        # Schedule follow-up messages
+        self._greeting_followup_task = asyncio.create_task(self._greeting_followups())
+
+    def split_response(self, text: str) -> list:
+        """Split a response on ||| delimiters. If no delimiters, check word count
+        and split at sentence boundaries if over the limit."""
+        if "|||" in text:
+            parts = [p.strip() for p in text.split("|||") if p.strip()]
+            if parts:
+                return parts
+        # Fallback: if response exceeds word limit, split at sentence boundaries
+        words = text.split()
+        if len(words) <= MAX_WORDS_PER_MESSAGE:
+            return [text]
+        import re as _re
+        sentences = _re.split(r'(?<=[.!?])\s+', text)
+        parts = []
+        current = []
+        current_words = 0
+        for sentence in sentences:
+            s_words = len(sentence.split())
+            if current_words + s_words > MAX_WORDS_PER_MESSAGE and current:
+                parts.append(" ".join(current))
+                current = [sentence]
+                current_words = s_words
+            else:
+                current.append(sentence)
+                current_words += s_words
+        if current:
+            parts.append(" ".join(current))
+        return parts if parts else [text]
 
     async def get_llm_response(self, user_message: str) -> Optional[str]:
+        # Detect and save language from user input
+        detected = detect_language(user_message)
+        if detected and detected != self.last_language:
+            self.last_language = detected
+            save_language(detected)
+            self.system_prompt = self._build_system_prompt(self.config)
+            print(f"[Language] Switched to: {detected}")
+
         self.conversation_history.append({"role": "user", "content": user_message})
         save_history(self.conversation_history)
         messages = [{"role": "system", "content": self.system_prompt}] + self.conversation_history
@@ -861,7 +1030,7 @@ class VoiceSession:
         async def _llm_call():
             async with aiohttp.ClientSession() as session:
                 headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
-                payload = {"model": "openclaw", "messages": messages, "max_tokens": 150}
+                payload = {"model": "openclaw", "messages": messages, "max_tokens": MAX_RESPONSE_TOKENS}
                 async with session.post(
                     f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
                     headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
@@ -1143,6 +1312,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                     text = data.get("text", "").strip()
                     local_tts_override = data.get("localTTS", session.local_tts)
                     if text and not session.processing:
+                        session.cancel_greeting_followups()
                         session.interrupted = False
                         session.processing = True
                         print(f"[WS] text_input: '{text[:100]}' (localTTS={local_tts_override})")
@@ -1152,21 +1322,33 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                         await session.send_json({"type": "processing", "stage": "thinking"})
                         response = await session.get_llm_response(text)
                         if response:
-                            print(f"[LLM] Response: {response[:100]}...")
-                            session.last_assistant_response = response
-                            await session.send_json({"type": "response_text", "text": response})
-                            if not session.interrupted and not local_tts_override:
-                                await session.send_json({"type": "processing", "stage": "speaking"})
-                                await session.send_json({"type": "response_start", "format": "pcm_16000"})
-                                if session.tts:
-                                    try:
-                                        await session.tts.synthesize_stream(response[:500], session.send_audio)
-                                    except ProviderError as e:
-                                        await session.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
-                                if not session.interrupted:
-                                    await session.send_json({"type": "response_end"})
-                            else:
-                                await session.send_json({"type": "response_end"})
+                            parts = session.split_response(response)
+                            print(f"[LLM] Response ({len(parts)} part(s)): {response[:100]}...")
+                            full_response = response.replace("|||", " ").strip()
+                            session.last_assistant_response = full_response
+                            for i, part in enumerate(parts):
+                                if session.interrupted:
+                                    break
+                                if len(parts) > 1:
+                                    await session.send_json({"type": "response_text", "text": part, "part": i + 1, "totalParts": len(parts)})
+                                else:
+                                    await session.send_json({"type": "response_text", "text": part})
+                                if not session.interrupted and not local_tts_override:
+                                    await session.send_json({"type": "processing", "stage": "speaking"})
+                                    await session.send_json({"type": "response_start", "format": "pcm_16000"})
+                                    if session.tts:
+                                        try:
+                                            await session.tts.synthesize_stream(part[:500], session.send_audio)
+                                        except ProviderError as e:
+                                            await session.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
+                                    if not session.interrupted:
+                                        await session.send_json({"type": "response_end"})
+                                else:
+                                    if not session.interrupted:
+                                        await session.send_json({"type": "response_end"})
+                                # Wait for client ack before sending next part
+                                if i < len(parts) - 1 and not session.interrupted:
+                                    await session.send_json({"type": "response_pending", "nextPart": i + 2, "totalParts": len(parts)})
                         session.processing = False
                 elif msg_type == "interrupt" and session:
                     print(f"[WS] Client interrupted")
@@ -1182,6 +1364,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                         session.audio_buffer = bytearray()
                         continue
                     if session.audio_buffer:
+                        session.cancel_greeting_followups()
                         session.interrupted = False  # Reset interrupt flag for new processing
                         session.processing = True
                         print(f"[WS] Processing {len(session.audio_buffer)} bytes")
@@ -1219,22 +1402,33 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                         await session.send_json({"type": "processing", "stage": "thinking"})
                         response = await session.get_llm_response(transcript)
                         if response:
-                            print(f"[LLM] Response: {response[:100]}...")
-                            session.last_assistant_response = response
-                            await session.send_json({"type": "response_text", "text": response})
-                            if not session.interrupted and not session.local_tts:
-                                await session.send_json({"type": "processing", "stage": "speaking"})
-                                await session.send_json({"type": "response_start", "format": "pcm_16000"})
-                                if session.tts:
-                                    try:
-                                        await session.tts.synthesize_stream(response[:500], session.send_audio)
-                                    except ProviderError as e:
-                                        await session.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
-                                if not session.interrupted:
-                                    await session.send_json({"type": "response_end"})
-                            else:
-                                if not session.interrupted:
-                                    await session.send_json({"type": "response_end"})
+                            parts = session.split_response(response)
+                            print(f"[LLM] Response ({len(parts)} part(s)): {response[:100]}...")
+                            full_response = response.replace("|||", " ").strip()
+                            session.last_assistant_response = full_response
+                            for i, part in enumerate(parts):
+                                if session.interrupted:
+                                    break
+                                if len(parts) > 1:
+                                    await session.send_json({"type": "response_text", "text": part, "part": i + 1, "totalParts": len(parts)})
+                                else:
+                                    await session.send_json({"type": "response_text", "text": part})
+                                if not session.interrupted and not session.local_tts:
+                                    await session.send_json({"type": "processing", "stage": "speaking"})
+                                    await session.send_json({"type": "response_start", "format": "pcm_16000"})
+                                    if session.tts:
+                                        try:
+                                            await session.tts.synthesize_stream(part[:500], session.send_audio)
+                                        except ProviderError as e:
+                                            await session.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
+                                    if not session.interrupted:
+                                        await session.send_json({"type": "response_end"})
+                                else:
+                                    if not session.interrupted:
+                                        await session.send_json({"type": "response_end"})
+                                # Wait for client ack before sending next part
+                                if i < len(parts) - 1 and not session.interrupted:
+                                    await session.send_json({"type": "response_pending", "nextPart": i + 2, "totalParts": len(parts)})
                         session.audio_buffer = bytearray()
                         session.processing = False
                 elif msg_type == "ping":
@@ -1254,6 +1448,8 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
     except Exception as e:
         print(f"[WS] Error: {e}")
     finally:
+        if session:
+            session.cancel_greeting_followups()
         print(f"[WS] Session ended")
 
 
