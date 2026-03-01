@@ -900,7 +900,7 @@ class VoiceSession:
         self._part_ack.set()  # Unblock any pending wait so the loop can exit
         print("[Session] Interrupted by client")
 
-    async def wait_for_part_ack(self, timeout: float = 30.0) -> bool:
+    async def wait_for_part_ack(self, timeout: float = 15.0) -> bool:
         """Wait for the client to acknowledge a finished message part.
         Returns True if ack received, False if interrupted or timed out."""
         self._part_ack.clear()
