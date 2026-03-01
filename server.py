@@ -933,13 +933,14 @@ class VoiceSession:
             # Check if user has spoken (history grew beyond greeting)
             if len(self.conversation_history) > self._greeting_history_len + 1:
                 return
+            # Check if user is currently speaking (audio accumulating)
+            if len(self.audio_buffer) > 0:
+                return
             followup = "Is there something you'd like to discuss with me?"
             print(f"[Greeting] Follow-up 1: {followup}")
             self.conversation_history.append({"role": "assistant", "content": followup})
             save_history(self.conversation_history)
             await self._send_message_with_tts(followup)
-            # Discard any audio that accumulated during TTS (prevents echo)
-            self.audio_buffer = bytearray()
 
             # Wait for second follow-up
             await asyncio.sleep(GREETING_FOLLOWUP_DELAY)
@@ -948,13 +949,14 @@ class VoiceSession:
             # Check if user has spoken since greeting (history grew beyond greeting + followup1)
             if len(self.conversation_history) > self._greeting_history_len + 2:
                 return
+            # Check if user is currently speaking (audio accumulating)
+            if len(self.audio_buffer) > 0:
+                return
             followup2 = "I'm here if you need me."
             print(f"[Greeting] Follow-up 2: {followup2}")
             self.conversation_history.append({"role": "assistant", "content": followup2})
             save_history(self.conversation_history)
             await self._send_message_with_tts(followup2)
-            # Discard any audio that accumulated during TTS (prevents echo)
-            self.audio_buffer = bytearray()
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -998,8 +1000,6 @@ class VoiceSession:
         self._recent_responses = [greeting]
         print(f"[Greeting] {greeting} (localTTS={self.local_tts})")
         await self._send_message_with_tts(greeting)
-        # Discard any audio that accumulated during TTS (prevents echo)
-        self.audio_buffer = bytearray()
         # Schedule follow-up messages
         self._greeting_followup_task = asyncio.create_task(self._greeting_followups())
 
