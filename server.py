@@ -802,6 +802,7 @@ class VoiceSession:
         self._recent_responses = []  # Last few responses for echo detection
         self.processing = False
         self.interrupted = False
+        self._part_ack = asyncio.Event()  # Signaled when client acks a multi-part message
         self.greeting_enabled = config.get("greetingEnabled", True)
         self._greeting_followup_task = None
         self._greeting_history_len = 0
@@ -896,7 +897,18 @@ class VoiceSession:
         """Mark session as interrupted — stops audio streaming."""
         self.interrupted = True
         self.processing = False
+        self._part_ack.set()  # Unblock any pending wait so the loop can exit
         print("[Session] Interrupted by client")
+
+    async def wait_for_part_ack(self, timeout: float = 30.0) -> bool:
+        """Wait for the client to acknowledge a finished message part.
+        Returns True if ack received, False if interrupted or timed out."""
+        self._part_ack.clear()
+        try:
+            await asyncio.wait_for(self._part_ack.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            print("[Session] part_ack timed out, proceeding")
+        return not self.interrupted
 
     async def transcribe_audio(self, audio_data: bytes) -> Optional[str]:
         if not self.stt:
@@ -1347,6 +1359,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                             session._recent_responses = (session._recent_responses + [full_response])[-3:]
                             for i, part in enumerate(parts):
                                 if session.interrupted:
+                                    print(f"[LLM] Dropping parts {i+1}-{len(parts)} (interrupted)")
                                     break
                                 if len(parts) > 1:
                                     await session.send_json({"type": "response_text", "text": part, "part": i + 1, "totalParts": len(parts)})
@@ -1365,10 +1378,16 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                                 else:
                                     if not session.interrupted:
                                         await session.send_json({"type": "response_end"})
-                                # Wait for client ack before sending next part
+                                # Wait for client to finish playing before sending next part
                                 if i < len(parts) - 1 and not session.interrupted:
                                     await session.send_json({"type": "response_pending", "nextPart": i + 2, "totalParts": len(parts)})
+                                    if not await session.wait_for_part_ack():
+                                        print(f"[LLM] Dropping parts {i+2}-{len(parts)} (interrupted during wait)")
+                                        break
                         session.processing = False
+                elif msg_type == "part_ack" and session:
+                    print(f"[WS] Client acknowledged part")
+                    session._part_ack.set()
                 elif msg_type == "interrupt" and session:
                     print(f"[WS] Client interrupted")
                     session.interrupt()
@@ -1428,6 +1447,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                             session._recent_responses = (session._recent_responses + [full_response])[-3:]
                             for i, part in enumerate(parts):
                                 if session.interrupted:
+                                    print(f"[LLM] Dropping parts {i+1}-{len(parts)} (interrupted)")
                                     break
                                 if len(parts) > 1:
                                     await session.send_json({"type": "response_text", "text": part, "part": i + 1, "totalParts": len(parts)})
@@ -1446,9 +1466,12 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                                 else:
                                     if not session.interrupted:
                                         await session.send_json({"type": "response_end"})
-                                # Wait for client ack before sending next part
+                                # Wait for client to finish playing before sending next part
                                 if i < len(parts) - 1 and not session.interrupted:
                                     await session.send_json({"type": "response_pending", "nextPart": i + 2, "totalParts": len(parts)})
+                                    if not await session.wait_for_part_ack():
+                                        print(f"[LLM] Dropping parts {i+2}-{len(parts)} (interrupted during wait)")
+                                        break
                         session.audio_buffer = bytearray()
                         session.processing = False
                 elif msg_type == "ping":
