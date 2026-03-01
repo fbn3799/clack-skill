@@ -1323,6 +1323,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                     session = VoiceSession(websocket, config)
                     print(f"[WS] Session started")
                     await session.send_json({"type": "ready"})
+                    await session.send_json({"type": "response_text", "text": "[debug] multi-message branch active"})
                     if session.conversation_history:
                         print(f"[WS] Resuming ({len(session.conversation_history)} messages)")
                     await session.greet()
