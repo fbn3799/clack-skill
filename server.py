@@ -577,7 +577,7 @@ def detect_available_providers():
 
 
 available_stt, available_tts = detect_available_providers()
-print(f"[Clack] Starting voice relay server...")
+print(f"[Clack] Starting voice relay server (multi-message branch)...")
 print(f"[Clack] STT: {STT_NAME} ({'ready' if stt_provider else 'NOT CONFIGURED'})")
 print(f"[Clack] TTS: {TTS_NAME} ({'ready' if tts_provider else 'NOT CONFIGURED'})")
 print(f"[Clack] Available STT: {list(available_stt.keys())}")
