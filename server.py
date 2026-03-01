@@ -108,15 +108,30 @@ def _get_agent_name() -> str:
     return ""
 
 
-def _is_echo(transcript: str, last_response: str) -> bool:
+def _is_echo(transcript: str, responses) -> bool:
+    """Check if transcript is an echo of any recent assistant response.
+    responses can be a single string or a list of strings."""
+    if isinstance(responses, str):
+        responses = [responses]
     t = transcript.lower().strip().replace("[speaker speaker_0]: ", "")
-    r = last_response.lower().strip()
-    if t in r or r in t:
-        return True
-    ratio = SequenceMatcher(None, t, r).ratio()
-    if ratio > 0.6:
-        print(f"[Echo] Similarity: {ratio:.2f}")
-        return True
+    for resp in responses:
+        if not resp:
+            continue
+        r = resp.lower().strip()
+        if t in r or r in t:
+            return True
+        ratio = SequenceMatcher(None, t, r).ratio()
+        if ratio > 0.6:
+            print(f"[Echo] Similarity: {ratio:.2f}")
+            return True
+        # Check if transcript starts with a large chunk of the response
+        # (e.g. echo + short user utterance appended like "Ne")
+        min_len = min(len(t), len(r))
+        if min_len > 20:
+            prefix_ratio = SequenceMatcher(None, t[:min_len], r[:min_len]).ratio()
+            if prefix_ratio > 0.8:
+                print(f"[Echo] Prefix similarity: {prefix_ratio:.2f}")
+                return True
     return False
 
 
@@ -784,6 +799,7 @@ class VoiceSession:
         self.conversation_history = load_history()
         self.audio_buffer = bytearray()
         self.last_assistant_response = ""
+        self._recent_responses = []  # Last few responses for echo detection
         self.processing = False
         self.interrupted = False
         self.greeting_enabled = config.get("greetingEnabled", True)
@@ -905,7 +921,7 @@ class VoiceSession:
                     await self.tts.synthesize_stream(text[:500], self.send_audio)
                 except ProviderError as e:
                     await self.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
-            await self.send_json({"type": "response_end"})
+        await self.send_json({"type": "response_end"})
 
     async def _greeting_followups(self):
         """Send greeting follow-up parts after delays if the user hasn't spoken."""
@@ -920,9 +936,10 @@ class VoiceSession:
             followup = "Is there something you'd like to discuss with me?"
             print(f"[Greeting] Follow-up 1: {followup}")
             self.conversation_history.append({"role": "assistant", "content": followup})
-            self.last_assistant_response = followup
             save_history(self.conversation_history)
             await self._send_message_with_tts(followup)
+            # Discard any audio that accumulated during TTS (prevents echo)
+            self.audio_buffer = bytearray()
 
             # Wait for second follow-up
             await asyncio.sleep(GREETING_FOLLOWUP_DELAY)
@@ -934,9 +951,10 @@ class VoiceSession:
             followup2 = "I'm here if you need me."
             print(f"[Greeting] Follow-up 2: {followup2}")
             self.conversation_history.append({"role": "assistant", "content": followup2})
-            self.last_assistant_response = followup2
             save_history(self.conversation_history)
             await self._send_message_with_tts(followup2)
+            # Discard any audio that accumulated during TTS (prevents echo)
+            self.audio_buffer = bytearray()
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -977,8 +995,11 @@ class VoiceSession:
         self._greeting_history_len = len(self.conversation_history)
         self.conversation_history.append({"role": "assistant", "content": greeting})
         self.last_assistant_response = greeting
+        self._recent_responses = [greeting]
         print(f"[Greeting] {greeting} (localTTS={self.local_tts})")
         await self._send_message_with_tts(greeting)
+        # Discard any audio that accumulated during TTS (prevents echo)
+        self.audio_buffer = bytearray()
         # Schedule follow-up messages
         self._greeting_followup_task = asyncio.create_task(self._greeting_followups())
 
@@ -1323,6 +1344,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                             print(f"[LLM] Response ({len(parts)} part(s)): {response[:100]}...")
                             full_response = response.replace("|||", " ").strip()
                             session.last_assistant_response = full_response
+                            session._recent_responses = (session._recent_responses + [full_response])[-3:]
                             for i, part in enumerate(parts):
                                 if session.interrupted:
                                     break
@@ -1380,7 +1402,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                             session.audio_buffer = bytearray()
                             session.processing = False
                             continue
-                        if session.last_assistant_response and _is_echo(transcript, session.last_assistant_response):
+                        if session._recent_responses and _is_echo(transcript, session._recent_responses):
                             print(f"[STT] Filtered: echo")
                             await session.send_json({"type": "processing", "stage": "filtered"})
                             await session.send_json({"type": "response_end"})
@@ -1403,6 +1425,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                             print(f"[LLM] Response ({len(parts)} part(s)): {response[:100]}...")
                             full_response = response.replace("|||", " ").strip()
                             session.last_assistant_response = full_response
+                            session._recent_responses = (session._recent_responses + [full_response])[-3:]
                             for i, part in enumerate(parts):
                                 if session.interrupted:
                                     break
