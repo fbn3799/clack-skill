@@ -28,6 +28,7 @@ import json
 import os
 import io
 import struct
+import subprocess
 import hmac
 import time
 from abc import ABC, abstractmethod
@@ -599,7 +600,11 @@ def detect_available_providers():
 
 
 available_stt, available_tts = detect_available_providers()
-print(f"[Clack] Starting voice relay server...")
+try:
+    GIT_BRANCH = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL, text=True).strip()
+except Exception:
+    GIT_BRANCH = None
+print(f"[Clack] Starting voice relay server{f' ({GIT_BRANCH})' if GIT_BRANCH else ''}...")
 print(f"[Clack] STT: {STT_NAME} ({'ready' if stt_provider else 'NOT CONFIGURED'})")
 print(f"[Clack] TTS: {TTS_NAME} ({'ready' if tts_provider else 'NOT CONFIGURED'})")
 print(f"[Clack] Available STT: {list(available_stt.keys())}")
@@ -1335,6 +1340,8 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                     session = VoiceSession(websocket, config)
                     print(f"[WS] Session started")
                     await session.send_json({"type": "ready"})
+                    if GIT_BRANCH and GIT_BRANCH not in ("master", "main"):
+                        await session.send_json({"type": "response_text", "text": f"[debug] branch: {GIT_BRANCH}"})
                     if session.conversation_history:
                         print(f"[WS] Resuming ({len(session.conversation_history)} messages)")
                     await session.greet()
