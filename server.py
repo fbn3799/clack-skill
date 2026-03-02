@@ -29,6 +29,7 @@ import os
 import io
 import struct
 import hmac
+import re
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -118,6 +119,36 @@ def _is_echo(transcript: str, last_response: str) -> bool:
         print(f"[Echo] Similarity: {ratio:.2f}")
         return True
     return False
+
+
+def _strip_markdown(text: str) -> str:
+    """Remove markdown formatting that breaks TTS."""
+    # Headers: # Heading → Heading
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Bold/italic: **bold**, *italic*, __bold__, _italic_
+    text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,3}(.+?)_{1,3}', r'\1', text)
+    # Strikethrough: ~~text~~
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+    # Inline code: `code`
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    # Code blocks: ```...```
+    text = re.sub(r'```[\s\S]*?```', '', text)
+    # Links: [text](url) → text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    # Images: ![alt](url) → alt
+    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+    # Bullet points: - item or * item
+    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
+    # Numbered lists: 1. item
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+    # Blockquotes: > text
+    text = re.sub(r'^\s*>\s?', '', text, flags=re.MULTILINE)
+    # Horizontal rules: --- or ***
+    text = re.sub(r'^\s*[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    # Collapse multiple blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 # ── Provider Errors ──
@@ -517,7 +548,8 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are a voice assistant. The user is talking to you via voice. "
     "RESPONSE RULES — these are MANDATORY:\n"
     "- Keep responses to 1-3 sentences MAX. This is spoken conversation, not text.\n"
-    "- NEVER use bullet points, numbered lists, markdown, or headers.\n"
+    "- NEVER use markdown formatting of any kind: no **bold**, *italics*, `code`, headers (#), "
+    "bullet points (- or *), numbered lists (1.), links, or code blocks. Your output goes directly to TTS.\n"
     "- NEVER give long explanations. Be brief like a real person talking.\n"
     "- If the user asks something complex, give a short summary and offer to elaborate.\n"
     "- Respond naturally and directly. No filler phrases.\n"
@@ -835,7 +867,7 @@ class VoiceSession:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
-                        greeting = result["choices"][0]["message"]["content"]
+                        greeting = _strip_markdown(result["choices"][0]["message"]["content"])
                     else:
                         greeting = "Hey!"
             except Exception:
@@ -886,6 +918,7 @@ class VoiceSession:
                         pass
             content = llm_task.result()
             if content:
+                content = _strip_markdown(content)
                 self.conversation_history.append({"role": "assistant", "content": content})
                 save_history(self.conversation_history)
                 return content
@@ -1208,7 +1241,6 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                             session.processing = False
                             continue
                         # Strip speaker labels — they confuse the LLM
-                        import re
                         transcript = re.sub(r'\[Speaker \w+\]:\s*', '', transcript).strip()
                         # Enforce input length limit
                         if len(transcript) > MAX_INPUT_CHARS:
