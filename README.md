@@ -1,8 +1,6 @@
 # Clack — Voice Relay for OpenClaw
 
-<p align="center">
-  <img src="assets/app-icon-256.png" alt="Clack" width="128" height="128" style="border-radius: 24px;">
-</p>
+<img src="Assets/clack-iOS-Default-1024x1024@1x.png" alt="Clack" width="128" height="128" style="border-radius: 24px;">
 
 [![ClawHub - Rated Benign](https://img.shields.io/badge/ClawHub-Rated%20Benign-brightgreen)](https://clawhub.ai/fbn3799/clack)
 [![VirusTotal - Clean](https://img.shields.io/badge/VirusTotal-Clean-brightgreen)](https://clawhub.ai/fbn3799/clack)
