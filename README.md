@@ -5,11 +5,11 @@
 [![ClawHub - Rated Benign](https://img.shields.io/badge/ClawHub-Rated%20Benign-brightgreen)](https://clawhub.ai/fbn3799/clack)
 [![VirusTotal - Clean](https://img.shields.io/badge/VirusTotal-Clean-brightgreen)](https://clawhub.ai/fbn3799/clack)
 
-> Talk to your AI assistant by voice. Real-time, self-hosted, private.
+> Hands-free voice chat with your OpenClaw. Real-time, self-hosted, private.
 
 Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that sets up a WebSocket voice relay server. It bridges voice input through speech-to-text → your OpenClaw agent → text-to-speech, enabling natural voice conversations.
 
-📱 **iOS & Android apps coming soon!** Check [clack-app.com](https://clack-app.com) for App Store and Play Store links once published. The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
+📱 **[Android app available now on Google Play!](https://play.google.com/store/apps/details?id=net.fabianschneider.apps.clack)** iOS coming soon. The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
 
 ## Quickstart
 
