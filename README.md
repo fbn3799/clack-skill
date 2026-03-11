@@ -2,8 +2,10 @@
 
 <img src="Assets/clack-iOS-Default-1024x1024@1x.png" alt="Clack" width="128" height="128" style="border-radius: 24px;">
 
-[![ClawHub - Rated Benign](https://img.shields.io/badge/ClawHub-Rated%20Benign-brightgreen)](https://clawhub.ai/fbn3799/clack)
-[![VirusTotal - Clean](https://img.shields.io/badge/VirusTotal-Clean-brightgreen)](https://clawhub.ai/fbn3799/clack)
+[![Want to test the client apps for free? Email me at hello@clack-app.com](https://img.shields.io/badge/Want%20to%20test%20the%20apps%3F-hello%40clack--app.com-blue?style=for-the-badge)](mailto:hello@clack-app.com)
+
+[![ClawHub - Benign](https://img.shields.io/badge/ClawHub-Benign-brightgreen)](https://clawhub.ai/fbn3799/clack)
+[![VirusTotal - Benign](https://img.shields.io/badge/VirusTotal-Benign-brightgreen)](https://clawhub.ai/fbn3799/clack)
 
 > Hands-free voice chat with your OpenClaw. Real-time, self-hosted, private.
 
@@ -34,7 +36,6 @@ Your agent will clone the repo, run the setup script, and configure everything. 
 - 🏠 **Self-hosted**: Your server, your providers, your data
 - 🎯 **Session isolation**: Each call gets its own `clack:<uuid>` session
 - ⚡ **Interrupt support**: Cancel TTS mid-sentence for natural conversation
-- 🔇 **Echo test mode**: Test your audio pipeline without using LLM credits
 
 ## Quick Start
 
@@ -96,11 +97,10 @@ Service configuration is via environment variables (set in the systemd service f
 | `TTS_PROVIDER` | `elevenlabs` | `elevenlabs`, `openai`, or `deepgram` |
 | `TTS_VOICE` | `Will` | Default voice (name or ID) |
 | `VOICE_RELAY_PORT` | `9878` | Server port |
-| `CLACK_ECHO_MODE` | `false` | Enable echo test mode server-wide |
 | `CLACK_MAX_INPUT_CHARS` | `300` | Max transcript length |
 | `CLACK_HISTORY_DIR` | `/var/lib/clack/history` | History storage path |
 | `CLACK_MAX_HISTORY` | `50` | Max conversation history messages |
-| `CLACK_AGENT_NAME` | `Storm` | Agent name shown in the iOS app |
+| `CLACK_AGENT_NAME` | — | Agent name shown in the client app |
 
 Provider API keys (`ELEVENLABS_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`) are stored in `config.json` with restricted file permissions. The setup script manages these — re-run `clack setup` to add, update, or remove keys.
 
