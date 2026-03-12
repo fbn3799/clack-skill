@@ -2,3 +2,7 @@ __pycache__/
 venv/
 .idea/
 .DS_Store
+config.json
+.env
+*.key
+*.pem
