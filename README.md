@@ -11,7 +11,7 @@
 
 Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that sets up a WebSocket voice relay server. It bridges voice input through speech-to-text → your OpenClaw agent → text-to-speech, enabling natural voice conversations.
 
-📱 **[Android app available now on Google Play!](https://play.google.com/store/apps/details?id=net.fabianschneider.apps.clack)** iOS coming soon. The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
+📱 **Available on [iOS](https://apps.apple.com/app/clack-hands-free-voice-agent/id6759464908) and [Android](https://play.google.com/store/apps/details?id=net.fabianschneider.apps.clack)!** The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
 
 ## Quickstart
 
