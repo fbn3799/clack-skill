@@ -1284,6 +1284,25 @@ async def get_conversation_history(conversation_id: str, request: Request, token
     return {"messages": history, "count": len(history), "conversation_id": conversation_id}
 
 
+@app.patch("/conversations/{conversation_id}")
+async def update_conversation(conversation_id: str, request: Request, token: str = Query(default="")):
+    """Update a conversation's metadata (title)."""
+    if not verify_token(token, request.client.host):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    meta = load_conversations_meta()
+    if conversation_id not in meta:
+        return JSONResponse({"error": "conversation not found"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+    if "title" in body:
+        meta[conversation_id]["title"] = body["title"][:100]
+    meta[conversation_id]["updated_at"] = time.time()
+    save_conversations_meta(meta)
+    return {"ok": True, "title": meta[conversation_id]["title"]}
+
+
 @app.delete("/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: str, request: Request, token: str = Query(default="")):
     """Delete a conversation and its history."""
