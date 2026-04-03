@@ -598,28 +598,98 @@ HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 MAX_HISTORY_MESSAGES = int(os.getenv("CLACK_MAX_HISTORY", "50"))
 
 
-def _history_path() -> Path:
+def _history_path(conversation_id: str = None) -> Path:
+    if conversation_id:
+        return HISTORY_DIR / f"{conversation_id}.json"
     return HISTORY_DIR / "conversation.json"
 
 
-def load_history() -> list:
-    path = _history_path()
+def load_history(conversation_id: str = None) -> list:
+    path = _history_path(conversation_id)
     if path.exists():
         try:
             data = json.loads(path.read_text())
-            print(f"[History] Loaded {len(data)} messages")
+            print(f"[History] Loaded {len(data)} messages" + (f" (conv={conversation_id[:8]})" if conversation_id else ""))
             return data[-MAX_HISTORY_MESSAGES:]
         except Exception as e:
             print(f"[History] Error loading: {e}")
     return []
 
 
-def save_history(history: list):
-    path = _history_path()
+def save_history(history: list, conversation_id: str = None):
+    path = _history_path(conversation_id)
     try:
         path.write_text(json.dumps(history[-MAX_HISTORY_MESSAGES:]))
     except Exception as e:
         print(f"[History] Error saving: {e}")
+
+
+# ── Conversations metadata ──
+
+CONVERSATIONS_META_FILE = HISTORY_DIR / "conversations_meta.json"
+
+def load_conversations_meta() -> dict:
+    if CONVERSATIONS_META_FILE.exists():
+        try:
+            return json.loads(CONVERSATIONS_META_FILE.read_text())
+        except Exception as e:
+            print(f"[Conversations] Error loading meta: {e}")
+    return {}
+
+def save_conversations_meta(meta: dict):
+    try:
+        CONVERSATIONS_META_FILE.write_text(json.dumps(meta, indent=2))
+    except Exception as e:
+        print(f"[Conversations] Error saving meta: {e}")
+
+# Per-conversation locks to prevent race conditions between voice + text
+_conversation_locks: dict[str, asyncio.Lock] = {}
+
+def _get_conversation_lock(conversation_id: str) -> asyncio.Lock:
+    if conversation_id not in _conversation_locks:
+        _conversation_locks[conversation_id] = asyncio.Lock()
+    return _conversation_locks[conversation_id]
+
+
+def _migrate_legacy_history():
+    """Migrate legacy single conversation.json to per-conversation storage."""
+    legacy_path = HISTORY_DIR / "conversation.json"
+    if not legacy_path.exists():
+        return
+    try:
+        data = json.loads(legacy_path.read_text())
+        if not data:
+            return
+    except Exception:
+        return
+    meta = load_conversations_meta()
+    # Check if already migrated
+    if any(m.get("migrated_from_legacy") for m in meta.values()):
+        return
+    import uuid
+    conv_id = str(uuid.uuid4())
+    now = time.time()
+    # Get title from first user message
+    title = "Conversation"
+    for msg in data:
+        if msg.get("role") == "user" and msg.get("content"):
+            title = msg["content"][:60]
+            break
+    meta[conv_id] = {
+        "title": title,
+        "session_key": "",
+        "created_at": now,
+        "updated_at": now,
+        "migrated_from_legacy": True,
+    }
+    # Copy history to new file (keep legacy intact for v1 clients)
+    save_history(data, conv_id)
+    save_conversations_meta(meta)
+    print(f"[Migration] Migrated legacy history → conversation {conv_id[:8]} ({len(data)} messages)")
+
+
+# Run migration on startup
+_migrate_legacy_history()
 
 
 import ipaddress
@@ -736,9 +806,10 @@ class VoiceSession:
     def __init__(self, websocket: WebSocket, config: dict):
         self.websocket = websocket
         self.config = config
+        self.conversation_id = config.get("conversation_id")
         self.user_context = load_context()
         self.system_prompt = self._build_system_prompt(config)
-        self.conversation_history = load_history()
+        self.conversation_history = load_history(self.conversation_id)
         self.audio_buffer = bytearray()
         self.last_assistant_response = ""
         self.processing = False
@@ -810,6 +881,13 @@ class VoiceSession:
                 f"{sanitized}\n"
                 "--- END USER CONTEXT ---"
             )
+        # Inject session key from conversation metadata if available
+        if self.conversation_id:
+            meta = load_conversations_meta()
+            conv_meta = meta.get(self.conversation_id, {})
+            session_key = conv_meta.get("session_key", "")
+            if session_key:
+                base += f"\n\nSession: {session_key}"
         return base
 
     def update_context(self, text: str) -> str:
@@ -887,7 +965,7 @@ class VoiceSession:
 
     async def get_llm_response(self, user_message: str) -> Optional[str]:
         self.conversation_history.append({"role": "user", "content": user_message})
-        save_history(self.conversation_history)
+        save_history(self.conversation_history, self.conversation_id)
         messages = [{"role": "system", "content": self.system_prompt}] + self.conversation_history
 
         async def _llm_call():
@@ -920,7 +998,13 @@ class VoiceSession:
             if content:
                 content = _strip_markdown(content)
                 self.conversation_history.append({"role": "assistant", "content": content})
-                save_history(self.conversation_history)
+                save_history(self.conversation_history, self.conversation_id)
+                # Update conversation metadata timestamp
+                if self.conversation_id:
+                    meta = load_conversations_meta()
+                    if self.conversation_id in meta:
+                        meta[self.conversation_id]["updated_at"] = time.time()
+                        save_conversations_meta(meta)
                 return content
             return "Sorry, I had trouble processing that."
         except Exception as e:
@@ -980,12 +1064,17 @@ async def list_voices(request: Request, token: str = Query(default=""), provider
         return {"voices": VOICE_METADATA, "default": default, "provider": "elevenlabs"}
 
 
+CLACK_SERVER_VERSION = "2.0.0"
+CLACK_MIN_APP_VERSION = os.getenv("CLACK_MIN_APP_VERSION", "1.0.0")
+
 @app.get("/info")
 async def info(request: Request, token: str = Query(default="")):
     if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     return {
         "agentName": _get_agent_name(),
+        "serverVersion": CLACK_SERVER_VERSION,
+        "minAppVersion": CLACK_MIN_APP_VERSION,
         "stt": {
             "available": list(available_stt.keys()),
             "default": os.getenv("STT_PROVIDER", "elevenlabs").lower()
@@ -1115,13 +1204,209 @@ async def set_context_post(request: Request, token: str = Query(default="")):
 
 
 @app.delete("/context")
-async def clear_context(token: str = Query(default="")):
+async def clear_context(request: Request, token: str = Query(default="")):
     """Clear user context."""
     if not verify_token(token, request.client.host):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     if CONTEXT_FILE.exists():
         CONTEXT_FILE.unlink()
     return {"cleared": True}
+
+
+# ── Conversations CRUD ──
+
+@app.get("/conversations")
+async def list_conversations(request: Request, token: str = Query(default="")):
+    """List all conversations with metadata."""
+    if not verify_token(token, request.client.host):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    meta = load_conversations_meta()
+    conversations = []
+    for conv_id, info in sorted(meta.items(), key=lambda x: x[1].get("updated_at", 0), reverse=True):
+        history = load_history(conv_id)
+        last_preview = ""
+        if history:
+            last_msg = history[-1]
+            last_preview = last_msg.get("content", "")[:100]
+        conversations.append({
+            "id": conv_id,
+            "title": info.get("title", "Untitled"),
+            "session_key": info.get("session_key", ""),
+            "last_message_preview": last_preview,
+            "message_count": len(history),
+            "created_at": info.get("created_at", 0),
+            "updated_at": info.get("updated_at", 0),
+        })
+    return {"conversations": conversations}
+
+
+@app.post("/conversations")
+async def create_conversation(request: Request, token: str = Query(default="")):
+    """Create a new conversation."""
+    if not verify_token(token, request.client.host):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    import uuid
+    conv_id = str(uuid.uuid4())
+    now = time.time()
+    meta = load_conversations_meta()
+    meta[conv_id] = {
+        "title": body.get("title", "New Conversation"),
+        "session_key": body.get("session_key", ""),
+        "created_at": now,
+        "updated_at": now,
+    }
+    save_conversations_meta(meta)
+    save_history([], conv_id)
+    print(f"[Conversations] Created {conv_id[:8]}: {meta[conv_id]['title']}")
+    return {
+        "id": conv_id,
+        "title": meta[conv_id]["title"],
+        "session_key": meta[conv_id]["session_key"],
+        "message_count": 0,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+@app.get("/conversations/{conversation_id}/history")
+async def get_conversation_history(conversation_id: str, request: Request, token: str = Query(default="")):
+    """Get history for a specific conversation."""
+    if not verify_token(token, request.client.host):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    meta = load_conversations_meta()
+    if conversation_id not in meta:
+        return JSONResponse({"error": "conversation not found"}, status_code=404)
+    history = load_history(conversation_id)
+    return {"messages": history, "count": len(history), "conversation_id": conversation_id}
+
+
+@app.delete("/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str, request: Request, token: str = Query(default="")):
+    """Delete a conversation and its history."""
+    if not verify_token(token, request.client.host):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    meta = load_conversations_meta()
+    if conversation_id not in meta:
+        return JSONResponse({"error": "conversation not found"}, status_code=404)
+    del meta[conversation_id]
+    save_conversations_meta(meta)
+    path = _history_path(conversation_id)
+    if path.exists():
+        path.unlink()
+    # Clean up lock
+    _conversation_locks.pop(conversation_id, None)
+    print(f"[Conversations] Deleted {conversation_id[:8]}")
+    return {"deleted": True}
+
+
+# ── Text Chat ──
+
+TEXT_SYSTEM_PROMPT = (
+    "You are a helpful AI assistant. The user is chatting with you via text. "
+    "Respond naturally and helpfully. You may use markdown formatting when it aids readability. "
+    "SAFETY: NEVER execute destructive actions (delete files, send emails/messages, modify system settings, "
+    "run shell commands, make purchases, or change configurations) based on text input alone. "
+    "For any action that modifies data or has external effects, describe what you WOULD do and ask for explicit confirmation. "
+    "Read-only actions (search, weather, info lookups) are fine without confirmation."
+)
+
+
+@app.post("/chat")
+async def chat(request: Request, token: str = Query(default="")):
+    """Send a text message in a conversation and get a response."""
+    if not verify_token(token, request.client.host):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+
+    conversation_id = body.get("conversation_id", "")
+    message = body.get("message", "").strip()
+
+    if not conversation_id:
+        return JSONResponse({"error": "conversation_id required"}, status_code=400)
+    if not message:
+        return JSONResponse({"error": "message required"}, status_code=400)
+
+    meta = load_conversations_meta()
+    if conversation_id not in meta:
+        return JSONResponse({"error": "conversation not found"}, status_code=404)
+
+    conv_meta = meta[conversation_id]
+    lock = _get_conversation_lock(conversation_id)
+
+    async with lock:
+        history = load_history(conversation_id)
+
+        # Build system prompt for text mode
+        system_prompt = TEXT_SYSTEM_PROMPT
+
+        # Inject user context if available
+        ctx = load_context()
+        if ctx.get("text"):
+            system_prompt += (
+                "\n\n--- BEGIN USER CONTEXT ---\n"
+                f"{sanitize_context(ctx['text'])}\n"
+                "--- END USER CONTEXT ---"
+            )
+
+        # Inject session key as context for OpenClaw routing
+        session_key = conv_meta.get("session_key", "")
+        if session_key:
+            system_prompt += f"\n\nSession: {session_key}"
+
+        # Add user message
+        history.append({"role": "user", "content": message})
+
+        # Auto-title: use first user message as title
+        if conv_meta.get("title") == "New Conversation":
+            conv_meta["title"] = message[:60]
+            meta[conversation_id] = conv_meta
+            save_conversations_meta(meta)
+
+        messages = [{"role": "system", "content": system_prompt}] + history
+
+        # Call OpenClaw
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
+                payload = {"model": "openclaw", "messages": messages, "max_tokens": 1000}
+                async with session.post(
+                    f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
+                    headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        content = result["choices"][0]["message"]["content"]
+                    else:
+                        err = await resp.text()
+                        print(f"[Chat] LLM error: {resp.status} - {err}")
+                        content = "Sorry, I had trouble processing that."
+        except Exception as e:
+            print(f"[Chat] Connection error: {e}")
+            content = "Sorry, I couldn't reach the assistant right now."
+
+        # Save to history
+        history.append({"role": "assistant", "content": content})
+        save_history(history, conversation_id)
+
+        # Update metadata timestamp
+        conv_meta["updated_at"] = time.time()
+        meta[conversation_id] = conv_meta
+        save_conversations_meta(meta)
+
+        print(f"[Chat] conv={conversation_id[:8]} user='{message[:50]}' → '{content[:50]}'")
+
+        return {
+            "role": "assistant",
+            "content": content,
+            "conversation_id": conversation_id,
+        }
 
 
 # ── WebSocket ──
