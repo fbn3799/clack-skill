@@ -1,4 +1,4 @@
-# Clack — Voice Relay for OpenClaw
+# Clack — AI Messenger for OpenClaw
 
 <img src="Assets/clack-iOS-Default-1024x1024@1x.png" alt="Clack" width="128" height="128" style="border-radius: 24px;">
 
@@ -7,35 +7,59 @@
 [![ClawHub - Benign](https://img.shields.io/badge/ClawHub-Benign-brightgreen)](https://clawhub.ai/fbn3799/clack)
 [![VirusTotal - Benign](https://img.shields.io/badge/VirusTotal-Benign-brightgreen)](https://clawhub.ai/fbn3799/clack)
 
-> Hands-free voice chat with your OpenClaw. Real-time, self-hosted, private.
+> Voice & text messenger for your self-hosted OpenClaw AI. Real-time, private, fully under your control.
 
-Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that sets up a WebSocket voice relay server. It bridges voice input through speech-to-text → your OpenClaw agent → text-to-speech, enabling natural voice conversations.
+Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that turns your AI into a private messenger. Chat by text or talk by voice — across multiple conversations, all stored on your own server.
 
-📱 **Available on [iOS](https://apps.apple.com/app/clack-hands-free-voice-agent/id6759464908) and [Android](https://play.google.com/store/apps/details?id=net.fabianschneider.apps.clack)!** The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
+📱 **Available on [iOS](https://apps.apple.com/app/clack-voice-ai-assistant/id6741264733) and [Android](https://play.google.com/store/apps/details?id=net.fabianschneider.apps.clack)!** The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
 
 ## Quickstart
 
 Just tell your OpenClaw agent:
 
 ```
-Install the Clack voice relay skill from https://github.com/fbn3799/clack-skill and set it up
+Install the Clack messenger skill from https://github.com/fbn3799/clack-skill and set it up
 ```
 
 Your agent will clone the repo, run the setup script, and configure everything. That's it.
 
 ## Features
 
-- 🎙️ **Real-time voice chat** with your OpenClaw agent
-- 🔊 **Independent voice input/output**: Choose STT and TTS providers separately — ElevenLabs, OpenAI, Deepgram, or on-device
+- 💬 **Text chat** with streaming responses in every conversation
+- 🎙️ **Real-time voice calls** with your OpenClaw agent
+- 📋 **Multiple conversations** — create, rename, and switch between chats
+- 🔊 **Independent voice providers**: Choose STT and TTS separately — ElevenLabs, OpenAI, Deepgram, or on-device
 - 💰 **Cost-saving combos**: Free on-device transcription + premium cloud voices, or fully local for zero API spend
 - 📱 **On-device speech**: Apple speech frameworks for STT and/or TTS — works offline, no API keys needed
-- 🗣️ **20 built-in ElevenLabs voices** with easy aliases
-- 🧠 **Conversation memory**: Persisted across calls (up to 50 messages)
+- 🗣️ **20+ built-in voices** with easy aliases
+- 🧠 **Conversation history**: Persisted on your server across sessions
+- 🏷️ **Voice/text indicators**: See which messages were spoken vs typed
 - 🔒 **Encrypted connections**: Domain with SSL or Tailscale — no unencrypted public access
 - 🔐 **Secure pairing**: Rate-limited one-time codes with 5-minute expiry
 - 🏠 **Self-hosted**: Your server, your providers, your data
-- 🎯 **Session isolation**: Each call gets its own `clack:<uuid>` session
-- ⚡ **Interrupt support**: Cancel TTS mid-sentence for natural conversation
+- ⚡ **Version compatibility**: Bidirectional checks prevent mismatched app/server versions
+
+## How It Works
+
+```
+┌─────────────┐                    ┌──────────────────────────────────┐                    ┌───────────────┐
+│             │   audio (WS)       │         Clack Skill              │   audio            │ STT Provider  │
+│  iOS App    ├───────────────────►│                                  ├───────────────────►│ Deepgram etc  │
+│             │                    │  ┌────────────────────────────┐  │                    └───────────────┘
+│  Android App│   text (REST)      │  │ WebSocket Voice Relay      │  │   prompt           ┌───────────────┐
+│             ├───────────────────►│  │ REST API (/chat, /convos)  │  ├───────────────────►│ OpenClaw GW   │
+│             │                    │  │ Conversation Store          │  │                    │ Your LLM      │
+│             │◄───────────────────│  │ Auth & Pairing             │  │   text             └───────────────┘
+│             │   responses        │  │ Version Compatibility      │  ├───────────────────►┌───────────────┐
+└─────────────┘                    │  └────────────────────────────┘  │                    │ TTS Provider  │
+                                   │                                  │                    │ ElevenLabs etc│
+                                   │  🔒 SSL (WSS) or Tailscale      │                    └───────────────┘
+                                   │  Port 9878                       │
+                                   └──────────────────────────────────┘
+                                           Your VPS / Home Server
+```
+
+On-device speech (Apple STT/TTS) runs locally on the phone — only transcript text or LLM responses travel to/from the server.
 
 ## Quick Start
 
@@ -77,12 +101,12 @@ Install Tailscale on your server and phone. Use the server's Tailscale IP (e.g. 
 
 ### 3. Open the app and connect
 
-1. Open the Clack app ([clack-app.com](https://clack-app.com) once published, or build your own client)
+1. Open the Clack app ([clack-app.com](https://clack-app.com))
 2. Go to Settings → Server
 3. Enter your domain or Tailscale IP
 4. **Domain mode**: Tap "Pair with Server" and enter the code from setup
 5. **Tailscale mode**: Just connect — no pairing required
-6. Tap the microphone and start talking!
+6. Start chatting — by voice or text!
 
 ## Configuration
 
@@ -106,6 +130,42 @@ Provider API keys (`ELEVENLABS_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`) a
 
 > **Tip:** For local speech mode (on-device STT/TTS), you don't need any speech API keys — only the OpenClaw gateway connection.
 
+## API Endpoints
+
+### REST
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check (no auth) |
+| `POST` | `/pair` | Pair a device with a one-time code (no auth) |
+| `GET` | `/info` | Server info, providers, version compatibility |
+| `GET` | `/conversations` | List all conversations |
+| `POST` | `/conversations` | Create a new conversation |
+| `DELETE` | `/conversations/{id}` | Delete a conversation |
+| `GET` | `/conversations/{id}/history` | Get conversation message history |
+| `PUT` | `/conversations/{id}/rename` | Rename a conversation |
+| `POST` | `/chat` | Send a text message, get a streamed response |
+| `GET` | `/voices` | List available TTS voices |
+
+### WebSocket
+
+| Endpoint | Description |
+|----------|-------------|
+| `WS /ws` | Voice session — streams audio bidirectionally |
+
+Messages in conversation history include an optional `voice: true` flag to distinguish voice-originated messages from text.
+
+## Version Compatibility
+
+The app and server perform bidirectional version checks on connect:
+
+| Check | Where | What happens |
+|-------|-------|-------------|
+| App too old | Server returns `minAppVersion` in `/info` | App shows "Update Required" with App Store link |
+| Server too old | App checks `serverVersion` from `/info` | App shows "Server Update Required" alert |
+
+When adding features that require both sides to update, bump the relevant minimum version **after** the new version is deployed/released.
+
 ## Security
 
 - **Encrypted connections only**: Domain with SSL (WSS) or Tailscale (WireGuard) — the app does not support unencrypted public connections
@@ -114,60 +174,11 @@ Provider API keys (`ELEVENLABS_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`) a
 - **Pairing is rate-limited**: 5 attempts per IP per 5 minutes, 2s delay on failure
 - **One-time codes**: 6-character alphanumeric, expire after 5 minutes, single-use
 - **Constant-time** token verification (HMAC) to prevent timing attacks
-- **Input sanitization**: User context is stripped to natural-language characters only, with IP addresses and domains removed. Sanitized text is returned to the client so users can see exactly what is stored.
+- **Input sanitization**: User context is stripped to natural-language characters only, with IP addresses and domains removed
 - **No telemetry**: Zero analytics, tracking, or data sent to developers
 - **Voice audio** goes to your server and only to the providers you choose
-- The iOS app stores only local settings (server address, token, preferences)
 
-## How It Works
-
-STT and TTS are independently configurable — pick any combination of on-device and cloud providers per call.
-
-### Cloud mode (default)
-
-```
-📱 Clack App          🖥️ Your Server          🌐 APIs
-┌──────────┐  audio   ┌──────────────┐         ┌─────────────┐
-│ 🎙️ Mic   ├─────────►│ Clack Relay  ├────────►│ STT Provider│
-│          │           │              │◄────────┤ (transcript)│
-│          │           │              │         ├─────────────┤
-│          │           │              ├────────►│ OpenClaw GW │
-│          │  audio    │              │◄────────┤ (AI reply)  │
-│ 🔊 Speaker│◄─────────┤              ├────────►├─────────────┤
-│          │           │              │◄────────┤ TTS Provider│
-└──────────┘           └──────────────┘         └─────────────┘
-```
-
-### On-device STT + cloud TTS (cost saver)
-
-```
-📱 Clack App                    🖥️ Your Server          🌐 APIs
-┌──────────────┐                ┌──────────────┐         ┌─────────────┐
-│ 🎙️ Mic        │                │              │         │             │
-│ ↓ Apple STT  │  text          │ Clack Relay  ├────────►│ OpenClaw GW │
-│ "Hey, what…" ├───────────────►│              │◄────────┤ (AI reply)  │
-│              │  audio          │              ├────────►├─────────────┤
-│ 🔊 Speaker    │◄───────────────┤              │◄────────┤ TTS Provider│
-└──────────────┘                └──────────────┘         └─────────────┘
-```
-STT happens on-device (free, unlimited) — only the transcript text is sent to the server. Great for saving transcription API costs while keeping premium cloud voices.
-
-### Fully on-device (zero API spend)
-
-```
-📱 Clack App                    🖥️ Your Server
-┌──────────────┐                ┌──────────────┐
-│ 🎙️ Mic        │                │              │
-│ ↓ Apple STT  │  text          │ Clack Relay  ├────────► OpenClaw GW
-│ "Hey, what…" ├───────────────►│              │◄────────  (AI reply)
-│              │  text           │              │
-│ Apple TTS ↓  │◄───────────────┤              │
-│ 🔊 Speaker    │                │              │
-└──────────────┘                └──────────────┘
-```
-Both STT and TTS run on-device using Apple speech frameworks. The server only handles LLM routing — no speech API keys needed at all. Works offline (except for the LLM call).
-
-### Mix and match
+## Mix and Match Voice Providers
 
 Choose providers per direction in **Settings → Voice**:
 
@@ -203,6 +214,7 @@ clack uninstall  # Remove service and venv
 | HTTP 429 on pairing | Rate limit hit — wait 5 minutes and try again |
 | Echo/feedback loop | This is auto-detected; if persistent, check mic/speaker distance |
 | High latency | Try a different STT/TTS provider, or use local speech mode |
+| "Server Update Required" | Run `clack update` on your server |
 
 ## Documentation
 
