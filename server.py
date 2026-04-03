@@ -963,7 +963,7 @@ class VoiceSession:
             return
         messages = [
             {"role": "system", "content": self.system_prompt},
-            *self.conversation_history,
+            *[{"role": m["role"], "content": m["content"]} for m in self.conversation_history],
             {"role": "user", "content": "[Voice session started. Greet the user briefly.]"},
         ]
         async with aiohttp.ClientSession() as session:
@@ -981,7 +981,7 @@ class VoiceSession:
                         greeting = "Hey!"
             except Exception:
                 greeting = "Hey!"
-        self.conversation_history.append({"role": "assistant", "content": greeting})
+        self.conversation_history.append({"role": "assistant", "content": greeting, "voice": True})
         self.last_assistant_response = greeting
         print(f"[Greeting] {greeting} (localTTS={self.local_tts})")
         await self.send_json({"type": "response_text", "text": greeting})
@@ -991,9 +991,12 @@ class VoiceSession:
         await self.send_json({"type": "response_end"})
 
     async def get_llm_response(self, user_message: str) -> Optional[str]:
-        self.conversation_history.append({"role": "user", "content": user_message})
+        self.conversation_history.append({"role": "user", "content": user_message, "voice": True})
         save_history(self.conversation_history, self.conversation_id)
-        messages = [{"role": "system", "content": self.system_prompt}] + self.conversation_history
+        # Strip non-standard fields (voice) before sending to LLM
+        messages = [{"role": "system", "content": self.system_prompt}] + [
+            {"role": m["role"], "content": m["content"]} for m in self.conversation_history
+        ]
 
         async def _llm_call():
             async with aiohttp.ClientSession() as session:
@@ -1024,7 +1027,7 @@ class VoiceSession:
             content = llm_task.result()
             if content:
                 content = _strip_markdown(content)
-                self.conversation_history.append({"role": "assistant", "content": content})
+                self.conversation_history.append({"role": "assistant", "content": content, "voice": True})
                 save_history(self.conversation_history, self.conversation_id)
                 # Update conversation metadata timestamp
                 if self.conversation_id:
