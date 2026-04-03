@@ -41,7 +41,7 @@ Your agent will clone the repo, run the setup script, and configure everything. 
 
 ## How It Works
 
-![Architecture](assets/Architecture.jpg)
+![Architecture](Assets/Architecture.jpg)
 
 On-device speech (Apple STT/TTS) runs locally on the phone — only transcript text or LLM responses travel to/from the server.
 
