@@ -11,7 +11,7 @@
 
 Clack is an [OpenClaw](https://github.com/openclaw/openclaw) skill that turns your AI into a private messenger. Chat by text or talk by voice — across multiple conversations, all stored on your own server.
 
-📱 **Available on [iOS](https://apps.apple.com/app/clack-voice-ai-assistant/id6741264733) and [Android](https://play.google.com/store/apps/details?id=net.fabianschneider.apps.clack)!** The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
+📱 **Available on [iOS](https://apps.apple.com/app/clack-hands-free-voice-agent/id6759464908) and [Android](https://play.google.com/store/apps/details?id=net.fabianschneider.apps.clack)!** The [server/skill is open source](https://github.com/fbn3799/clack-skill) — feel free to build your own client!
 
 ## Quickstart
 
