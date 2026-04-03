@@ -41,23 +41,7 @@ Your agent will clone the repo, run the setup script, and configure everything. 
 
 ## How It Works
 
-```
-┌─────────────┐                    ┌──────────────────────────────────┐                    ┌───────────────┐
-│             │   audio (WS)       │         Clack Skill              │   audio            │ STT Provider  │
-│  iOS App    ├───────────────────►│                                  ├───────────────────►│ Deepgram etc  │
-│             │                    │  ┌────────────────────────────┐  │                    └───────────────┘
-│  Android App│   text (REST)      │  │ WebSocket Voice Relay      │  │   prompt           ┌───────────────┐
-│             ├───────────────────►│  │ REST API (/chat, /convos)  │  ├───────────────────►│ OpenClaw GW   │
-│             │                    │  │ Conversation Store          │  │                    │ Your LLM      │
-│             │◄───────────────────│  │ Auth & Pairing             │  │   text             └───────────────┘
-│             │   responses        │  │ Version Compatibility      │  ├───────────────────►┌───────────────┐
-└─────────────┘                    │  └────────────────────────────┘  │                    │ TTS Provider  │
-                                   │                                  │                    │ ElevenLabs etc│
-                                   │  🔒 SSL (WSS) or Tailscale      │                    └───────────────┘
-                                   │  Port 9878                       │
-                                   └──────────────────────────────────┘
-                                           Your VPS / Home Server
-```
+![Architecture](assets/Architecture.jpg)
 
 On-device speech (Apple STT/TTS) runs locally on the phone — only transcript text or LLM responses travel to/from the server.
 
