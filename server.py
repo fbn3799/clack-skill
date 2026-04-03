@@ -913,6 +913,37 @@ class VoiceSession:
         self.processing = False
         print("[Session] Interrupted by client")
 
+    async def synthesize_chunked(self, text: str):
+        """Split long text into sentence chunks and synthesize sequentially.
+        Respects interrupt — stops immediately if session is interrupted."""
+        if not self.tts:
+            return
+        # Split at sentence boundaries
+        chunks = re.split(r'(?<=[.!?])\s+', text.strip())
+        # Merge small chunks to avoid too many API calls
+        merged = []
+        current = ""
+        for chunk in chunks:
+            if len(current) + len(chunk) + 1 <= 500:
+                current = (current + " " + chunk).strip() if current else chunk
+            else:
+                if current:
+                    merged.append(current)
+                current = chunk
+        if current:
+            merged.append(current)
+
+        print(f"[TTS] Chunked: {len(merged)} parts from {len(text)} chars")
+        for i, chunk in enumerate(merged):
+            if self.interrupted:
+                print(f"[TTS] Interrupted at chunk {i+1}/{len(merged)}")
+                break
+            try:
+                await self.tts.synthesize_stream(chunk, self.send_audio)
+            except ProviderError as e:
+                await self.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
+                break
+
     async def transcribe_audio(self, audio_data: bytes) -> Optional[str]:
         if not self.stt:
             print("[STT] No provider configured")
@@ -956,11 +987,7 @@ class VoiceSession:
         await self.send_json({"type": "response_text", "text": greeting})
         if not self.local_tts:
             await self.send_json({"type": "response_start", "format": "pcm_16000"})
-            if self.tts:
-                try:
-                    await self.tts.synthesize_stream(greeting[:500], self.send_audio)
-                except ProviderError as e:
-                    await self.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
+            await self.synthesize_chunked(greeting)
         await self.send_json({"type": "response_end"})
 
     async def get_llm_response(self, user_message: str) -> Optional[str]:
@@ -1495,11 +1522,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                             if not session.interrupted and not local_tts_override:
                                 await session.send_json({"type": "processing", "stage": "speaking"})
                                 await session.send_json({"type": "response_start", "format": "pcm_16000"})
-                                if session.tts:
-                                    try:
-                                        await session.tts.synthesize_stream(response[:500], session.send_audio)
-                                    except ProviderError as e:
-                                        await session.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
+                                await session.synthesize_chunked(response)
                                 if not session.interrupted:
                                     await session.send_json({"type": "response_end"})
                             else:
@@ -1561,11 +1584,7 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                             if not session.interrupted and not session.local_tts:
                                 await session.send_json({"type": "processing", "stage": "speaking"})
                                 await session.send_json({"type": "response_start", "format": "pcm_16000"})
-                                if session.tts:
-                                    try:
-                                        await session.tts.synthesize_stream(response[:500], session.send_audio)
-                                    except ProviderError as e:
-                                        await session.send_json({"type": "error", "message": f"TTS failed: {e.provider} (HTTP {e.status})"})
+                                await session.synthesize_chunked(response)
                                 if not session.interrupted:
                                     await session.send_json({"type": "response_end"})
                             else:
