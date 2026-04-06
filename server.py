@@ -20,7 +20,7 @@ Environment variables:
   VOICE_RELAY_PORT       - Server port (default: 9878)
   TTS_VOICE             - Voice ID/name (provider-specific)
   CLACK_HISTORY_DIR     - History storage dir (default: /var/lib/clack/history)
-  CLACK_MAX_HISTORY     - Max messages to keep (default: 50)
+  CLACK_MAX_HISTORY     - Max messages to keep (default: 200)
 """
 
 import asyncio
@@ -595,7 +595,7 @@ print(f"[Clack] Relay auth: {'ENABLED' if RELAY_AUTH_TOKEN else 'DISABLED (open!
 
 HISTORY_DIR = Path(os.getenv("CLACK_HISTORY_DIR", "/var/lib/clack/history"))
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-MAX_HISTORY_MESSAGES = int(os.getenv("CLACK_MAX_HISTORY", "50"))
+MAX_HISTORY_MESSAGES = int(os.getenv("CLACK_MAX_HISTORY", "200"))
 
 
 def _history_path(conversation_id: str = None) -> Path:
