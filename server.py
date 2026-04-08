@@ -999,19 +999,28 @@ class VoiceSession:
         ]
 
         async def _llm_call():
-            async with aiohttp.ClientSession() as session:
-                headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
-                payload = {"model": "openclaw", "messages": messages, "max_tokens": 150}
-                async with session.post(
-                    f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
-                    headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
-                ) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        return result["choices"][0]["message"]["content"]
-                    else:
-                        print(f"[LLM] OpenClaw error: {resp.status} - {await resp.text()}")
-                        return None
+            for attempt in range(3):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
+                        payload = {"model": "openclaw", "messages": messages, "max_tokens": 150}
+                        async with session.post(
+                            f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
+                            headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
+                        ) as resp:
+                            if resp.status == 200:
+                                result = await resp.json()
+                                content = result["choices"][0]["message"]["content"]
+                                if content and "no response from" not in content.lower():
+                                    return content
+                                print(f"[LLM] Gateway returned empty/timeout response (attempt {attempt+1}/3): {content}")
+                            else:
+                                print(f"[LLM] OpenClaw error: {resp.status} - {await resp.text()}")
+                except Exception as e:
+                    print(f"[LLM] Connection error (attempt {attempt+1}/3): {e}")
+                if attempt < 2:
+                    await asyncio.sleep(2)
+            return None
 
         # Run LLM call with keepalive pings to prevent client timeout
         try:
@@ -1420,25 +1429,33 @@ async def chat(request: Request, token: str = Query(default="")):
 
         messages = [{"role": "system", "content": system_prompt}] + history
 
-        # Call OpenClaw
-        try:
-            async with aiohttp.ClientSession() as session:
-                headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
-                payload = {"model": "openclaw", "messages": messages, "max_tokens": 1000}
-                async with session.post(
-                    f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
-                    headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
-                ) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        content = result["choices"][0]["message"]["content"]
-                    else:
-                        err = await resp.text()
-                        print(f"[Chat] LLM error: {resp.status} - {err}")
-                        content = "Sorry, I had trouble processing that."
-        except Exception as e:
-            print(f"[Chat] Connection error: {e}")
-            content = "Sorry, I couldn't reach the assistant right now."
+        # Call OpenClaw (retry if gateway returns empty/timeout placeholder)
+        content = None
+        for attempt in range(3):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
+                    payload = {"model": "openclaw", "messages": messages, "max_tokens": 1000}
+                    async with session.post(
+                        f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
+                        headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
+                    ) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            content = result["choices"][0]["message"]["content"]
+                            if content and "no response from" not in content.lower():
+                                break
+                            print(f"[Chat] Gateway returned empty/timeout response (attempt {attempt+1}/3): {content}")
+                            content = None
+                        else:
+                            err = await resp.text()
+                            print(f"[Chat] LLM error: {resp.status} - {err}")
+            except Exception as e:
+                print(f"[Chat] Connection error (attempt {attempt+1}/3): {e}")
+            if attempt < 2:
+                await asyncio.sleep(2)
+        if not content:
+            content = "Sorry, I had trouble processing that. Please try again."
 
         # Save to history
         history.append({"role": "assistant", "content": content})
