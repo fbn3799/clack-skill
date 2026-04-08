@@ -999,11 +999,11 @@ class VoiceSession:
         ]
 
         async def _llm_call():
-            for attempt in range(3):
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
-                        payload = {"model": "openclaw", "messages": messages, "max_tokens": 150}
+            try:
+                async with aiohttp.ClientSession() as session:
+                    headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
+                    payload = {"model": "openclaw", "messages": messages, "max_tokens": 150}
+                    for attempt in range(2):
                         async with session.post(
                             f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
                             headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
@@ -1013,13 +1013,14 @@ class VoiceSession:
                                 content = result["choices"][0]["message"]["content"]
                                 if content and "no response from" not in content.lower():
                                     return content
-                                print(f"[LLM] Gateway returned empty/timeout response (attempt {attempt+1}/3): {content}")
+                                print(f"[LLM] Gateway timeout response (attempt {attempt+1}/2): {content}")
                             else:
                                 print(f"[LLM] OpenClaw error: {resp.status} - {await resp.text()}")
-                except Exception as e:
-                    print(f"[LLM] Connection error (attempt {attempt+1}/3): {e}")
-                if attempt < 2:
-                    await asyncio.sleep(2)
+                                return None  # Don't retry on HTTP errors
+                        if attempt == 0:
+                            await asyncio.sleep(2)
+            except Exception as e:
+                print(f"[LLM] Connection error: {e}")
             return None
 
         # Run LLM call with keepalive pings to prevent client timeout
@@ -1429,13 +1430,13 @@ async def chat(request: Request, token: str = Query(default="")):
 
         messages = [{"role": "system", "content": system_prompt}] + history
 
-        # Call OpenClaw (retry if gateway returns empty/timeout placeholder)
+        # Call OpenClaw (single retry if gateway returns timeout placeholder)
         content = None
-        for attempt in range(3):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
-                    payload = {"model": "openclaw", "messages": messages, "max_tokens": 1000}
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}", "Content-Type": "application/json"}
+                payload = {"model": "openclaw", "messages": messages, "max_tokens": 1000}
+                for attempt in range(2):
                     async with session.post(
                         f"{OPENCLAW_GATEWAY_URL}/v1/chat/completions",
                         headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=120)
@@ -1445,15 +1446,16 @@ async def chat(request: Request, token: str = Query(default="")):
                             content = result["choices"][0]["message"]["content"]
                             if content and "no response from" not in content.lower():
                                 break
-                            print(f"[Chat] Gateway returned empty/timeout response (attempt {attempt+1}/3): {content}")
+                            print(f"[Chat] Gateway timeout response (attempt {attempt+1}/2): {content}")
                             content = None
                         else:
                             err = await resp.text()
                             print(f"[Chat] LLM error: {resp.status} - {err}")
-            except Exception as e:
-                print(f"[Chat] Connection error (attempt {attempt+1}/3): {e}")
-            if attempt < 2:
-                await asyncio.sleep(2)
+                            break  # Don't retry on HTTP errors
+                    if attempt == 0 and not content:
+                        await asyncio.sleep(2)
+        except Exception as e:
+            print(f"[Chat] Connection error: {e}")
         if not content:
             content = "Sorry, I had trouble processing that. Please try again."
 
