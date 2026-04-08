@@ -994,8 +994,10 @@ class VoiceSession:
         self.conversation_history.append({"role": "user", "content": user_message, "voice": True})
         save_history(self.conversation_history, self.conversation_id)
         # Strip non-standard fields (voice) before sending to LLM
+        # Voice only sends last 20 messages for context to keep memory low
+        recent = self.conversation_history[-20:]
         messages = [{"role": "system", "content": self.system_prompt}] + [
-            {"role": m["role"], "content": m["content"]} for m in self.conversation_history
+            {"role": m["role"], "content": m["content"]} for m in recent
         ]
 
         async def _llm_call():
@@ -1620,7 +1622,13 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
                 if not authenticated:
                     continue
                 if not session.local_stt:
-                    session.audio_buffer.extend(message["bytes"])
+                    # Cap audio buffer at 10MB (~5 min of 16kHz mono PCM) to prevent OOM
+                    if len(session.audio_buffer) < 10 * 1024 * 1024:
+                        session.audio_buffer.extend(message["bytes"])
+                    elif len(session.audio_buffer) >= 10 * 1024 * 1024 and not session.processing:
+                        print(f"[WS] Audio buffer limit reached ({len(session.audio_buffer)} bytes), forcing end_speech")
+                        session.audio_buffer = bytearray()
+                        await session.send_json({"type": "input_cut_off"})
     except WebSocketDisconnect:
         print(f"[WS] Client disconnected")
     except RuntimeError as e:
@@ -1631,6 +1639,9 @@ async def voice_endpoint(websocket: WebSocket, token: str = Query(default="")):
     except Exception as e:
         print(f"[WS] Error: {e}")
     finally:
+        if session:
+            session.audio_buffer = bytearray()
+            session.conversation_history = []
         print(f"[WS] Session ended")
 
 
